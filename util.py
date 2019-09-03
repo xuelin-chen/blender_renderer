@@ -3,11 +3,19 @@ import numpy as np
 
 from math import radians
 
-import OpenEXR as exr
-import Imath
-import array
 from plyfile import PlyData, PlyElement
 from PIL import Image
+
+cat_name2id = {
+                'plane': '02691156',
+                'car': '02958343',
+                'chair': '03001627',
+                'table': '04379243',
+                'lamp': '03636649',
+                'sofa': '04256520',
+                'boat': '04530566',
+                'dresser': '02933112'
+                }
 
 def get_shapenet_clsID_modelname_from_filename(filename):
     clsid = filename.split('/')[-4]
@@ -18,6 +26,14 @@ def get_index_of_arr_in_list(list_of_array, arr):
     for i, a in enumerate(list_of_array):
         if (a==arr).all(): return i
     return None
+
+def items_in_txt_file(txt_filename):
+    with open(txt_filename) as f:
+        content = f.readlines()
+    # you may also want to remove whitespace characters like `\n` at the end of each line
+    content = [x.strip() for x in content]
+    return content
+
 # ----------------------------------------
 # Point cloud IO
 # ----------------------------------------
@@ -79,6 +95,9 @@ def write_ply(points, filename, colors=None, normals=None, text=False):
     PlyData([el], text=text).write(filename)
 
 ######### image IO ################
+import OpenEXR as exr
+import Imath
+import array
 def read_exr_image(exr_filename, channels=['R', 'G', 'B']):
     exrfile = exr.InputFile(exr_filename)
     dw = exrfile.header()['dataWindow']
@@ -136,7 +155,7 @@ def sample_from_point_cloud(point_cloud, nb_samples=1000):
     sampled_pc = point_cloud[random_choices]
     return sampled_pc
 
-def pc_normalize(pc, center_type='bbox', norm_type='unit_sphere', eps=0.05):
+def pc_normalize(pc, center_type='bbox', norm_type='diag2sphere', eps=0.01):
     if center_type == 'bbox':
         pts_min = np.amin(pc, axis=0)
         pts_max = np.amax(pc, axis=0)
@@ -174,7 +193,8 @@ def pc_normalize(pc, center_type='bbox', norm_type='unit_sphere', eps=0.05):
       pts_min_trans = np.amin(pc_trans, axis=0)
       pts_max_trans = np.amax(pc_trans, axis=0)
       diag_length = np.linalg.norm(pts_min_trans - pts_max_trans)
-      scale_f = (1.-eps) / diag_length
+      scale_f = (1. + eps) / diag_length
+      print(pts_min_trans, pts_max_trans, diag_length, scale_f)
       return -centroid, scale_f
     else:
       print('Error: unknow normalization type: %s. Not normalizing'%(norm_type))
@@ -520,7 +540,7 @@ def get_ref_point_idx_from_point_cloud(tmesh, point_cloud_with_feat, faster=True
 
 from scipy.io import loadmat
 import skimage.measure
-def mesh_from_voxels(voxel_mat_filename):
+def mesh_from_voxels(voxel_mat_filename, downsample_factor=1):
     voxel_model_mat = loadmat(voxel_mat_filename)
     voxel_model_b = voxel_model_mat['b'][:].astype(np.int32)
     voxel_model_bi = voxel_model_mat['bi'][:].astype(np.int32)-1
@@ -529,22 +549,39 @@ def mesh_from_voxels(voxel_mat_filename):
         for j in range(16):
             for k in range(16):
                 voxel_model_256[i*16:i*16+16,j*16:j*16+16,k*16:k*16+16] = voxel_model_b[voxel_model_bi[i,j,k]]
+    # downsample
+    if downsample_factor != 1:
+        if downsample_factor not in [1, 2, 4]:
+            print('Skip downsampling, invalid downsample factor: ', downsample_factor)
+        else:
+            voxel_model_256 = skimage.measure.block_reduce(voxel_model_256, (downsample_factor,downsample_factor,downsample_factor), np.max)
+    
     #add flip&transpose to convert coord from shapenet_v1 to shapenet_v2
-    voxel_model_256 = np.flip(np.transpose(voxel_model_256, (2,1,0)), 2)
+    voxel_model_256 = np.transpose(voxel_model_256, (2,1,0))
+    voxel_model_256 = np.flip(voxel_model_256, 2)
 
-    voxel_size = 1/256.
+    voxel_size = 1/ (256 / downsample_factor)
     verts, faces, normals_, values = skimage.measure.marching_cubes_lewiner(
         voxel_model_256, level=0.0, spacing=[voxel_size] * 3
         )
+
     # move to the orgine
     verts = verts - [0.5,0.5,0.5]
     # flip the index order for all faces
     faces = faces[:, [0, 2, 1]]
+
+    # NOTE: for car, still need to flip x?
+    if '02958343' in voxel_mat_filename:
+        verts[:, 0] = -verts[:, 0]
+        faces = faces[:, [0, 2, 1]] # do not why we need change the order again to flip the face normal
+
     mesh = trimesh.Trimesh(vertices=verts, faces=faces)
     return mesh
 
 if __name__ == "__main__":
-    read_ply('test_vc_bin.ply', return_faces=True)
+    color_arr = read_exr_image('color0001.exr')
+    color_iamge = Image.fromarray((color_arr*255).astype(np.unit8))
+    color_iamge.save('color.png')
 
 '''
 import skimage.measure

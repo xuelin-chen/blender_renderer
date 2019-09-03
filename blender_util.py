@@ -2,11 +2,13 @@ import bpy
 import bpy_extras
 from mathutils import Matrix
 import numpy as np
+import sys
+sys.path.append('.')
 import util
 import blender_camera_util
 import os
 from math import radians
-
+from PIL import Image
 ###################################################
 # convertion between blender coord system and shapenet object system
 # X_b = X_s, Y_b = -Z_s, Z_b = Y_s
@@ -144,9 +146,11 @@ def process_scene_objects(args):
               # the axis conversion of importing does not change the data in-place,
               # so we do it manually
               trans_v_axis_replaced = trans_v.copy()
+              
               trans_v_axis_replaced[0] = trans_v[0]
               trans_v_axis_replaced[1] = -trans_v[2]
               trans_v_axis_replaced[2] = trans_v[1]
+              
               bpy.ops.transform.translate(value=(trans_v_axis_replaced[0], trans_v_axis_replaced[1], trans_v_axis_replaced[2]))
               bpy.ops.object.transform_apply(location=True)
               bpy.ops.transform.resize(value=(scale_f, scale_f, scale_f))
@@ -257,7 +261,7 @@ def scan_point_cloud(depth_file_output, normal_file_output, albedo_file_output, 
             os.remove(scene.render.filepath + "_depth0001.exr")
             os.remove(scene.render.filepath + "_albedo0001.exr")
             os.remove(scene.render.filepath + "_matidx0001.exr")
-            
+
     return all_points_normals_colors_mindices
 
 def setup_sunlamp(target_obj):
@@ -306,7 +310,7 @@ def setup_sunlamp(target_obj):
     return follow_lamp
 
 from transforms3d.euler import euler2mat
-def render_passes(depth_file_output, normal_file_output, albedo_file_output, args, rot_angles_list, subfolder_name='gt'):
+def render_passes(depth_file_output, normal_file_output, albedo_file_output, args, rot_angles_list, subfolder_name='gt', output_format='exr'):
     scene = bpy.context.scene
     ######### filename for output ##############
     if 'ShapeNetCore' not in args.obj:
@@ -361,14 +365,86 @@ def render_passes(depth_file_output, normal_file_output, albedo_file_output, arg
         albedo_arr = np.clip(albedo_arr, a_min=0, a_max=1)
 
         # write out passes
-        util.write_exr_image(depth_arr, scene.render.filepath + "_depth.exr")
-        util.write_exr_image(normal_arr, scene.render.filepath + "_normal.exr")
-        util.write_exr_image(albedo_arr, scene.render.filepath + "_albedo.exr")
-        util.write_exr_image(hard_mask_arr, scene.render.filepath + "_mask.exr")
+        if output_format == 'exr':
+            util.write_exr_image(depth_arr, scene.render.filepath + "_depth.exr")
+            #util.write_exr_image(xyz_sworld_arr, scene.render.filepath + "_wxyz.exr")
+            util.write_exr_image(normal_arr, scene.render.filepath + "_normal.exr")
+            #util.write_exr_image(normal_sworld_arr, scene.render.filepath + "_wnormal.exr")
+            util.write_exr_image(albedo_arr, scene.render.filepath + "_albedo.exr")
+            util.write_exr_image(hard_mask_arr, scene.render.filepath + "_mask.exr")
+        elif output_format == 'png':
+            depth_arr = np.array(depth_arr*255, dtype=np.uint8)
+            depth_pil = Image.fromarray(depth_arr)
+            depth_pil.save(scene.render.filepath + "_depth.png")
+
+            normal_arr = np.array((normal_arr+1)/2.*255, dtype=np.uint8)
+            normal_pil = Image.fromarray(normal_arr)
+            normal_pil.save(scene.render.filepath + "_normal.png")
         
+            albedo_arr = np.array(albedo_arr*255, dtype=np.uint8)
+            albedo_pil = Image.fromarray(albedo_arr)
+            albedo_pil.save(scene.render.filepath + "_albedo.png")
+
+            hard_mask_arr = np.array(hard_mask_arr*255, dtype=np.uint8)
+            mask_pil = Image.fromarray(hard_mask_arr)
+            mask_pil.save(scene.render.filepath + "_mask.png")
+
         # remove renderings
         #os.remove(scene.render.filepath+'.png')
         os.remove(scene.render.filepath + "_normal0001.exr")
         os.remove(scene.render.filepath + "_depth0001.exr")
         os.remove(scene.render.filepath + "_albedo0001.exr")
     
+def bcam2world_RT_matrixes(rot_angles_list):
+    scene = bpy.context.scene
+    ######### filename for output ##############
+
+    # setup camera and render
+    cam_init_location = (0., 0.5, 0.)
+    cam = get_default_camera()
+    cam.location = cam_init_location
+    cam.data.type = 'ORTHO'
+    cam.data.ortho_scale = 1
+    cam.data.clip_start = 0
+    cam.data.clip_end = 100 # a value that is large enough
+    cam_constraint = cam.constraints.new(type='TRACK_TO')
+    cam_constraint.track_axis = 'TRACK_NEGATIVE_Z'
+    cam_constraint.up_axis = 'UP_Y'
+    b_empty = get_lookat_target(cam)
+    cam_constraint.target = b_empty # track to a empty object at the origin
+
+    RT_dict = {}
+
+    for xyz_angle in rot_angles_list:
+
+        # rotate camera
+        euler_rot_mat = euler2mat(radians(xyz_angle[0]), radians(xyz_angle[1]), radians(xyz_angle[2]), 'sxyz')
+        new_cam_location = np.dot(euler_rot_mat, np.array(cam_init_location))
+        cam.location = new_cam_location
+
+        bpy.context.scene.update() # NOTE: important! Not doing rendering (which updates the scene) but we need to update the scene after we reset the camera
+        
+        # transform from depth to 3D world point cloud
+        RT_bcam2world = blender_camera_util.get_bcam2world_RT_matrix_from_blender(cam)
+        key_tuple = tuple(xyz_angle)
+        RT_dict[key_tuple] = RT_bcam2world
+
+    return RT_dict
+
+import pickle
+if __name__ == '__main__':
+    clear_scene_objects()
+
+    rot_angles_list = []
+    for x_angle in range(0, 60):
+        for z_angle in range(0, 361):
+            rot_x_angle = x_angle
+            rot_y_angle = 0 # do not rot around y, no in-plane rotation
+            rot_z_angle = z_angle
+            rot_angles_list.append([rot_x_angle, rot_y_angle, rot_z_angle])
+
+    RT_mat_dict = bcam2world_RT_matrixes(rot_angles_list)
+    pickle.dump( RT_mat_dict, open( "RT_matrixes_dict.pickle", "wb" ) )
+
+    with open('RT_matrixes_dict.pickle', 'rb') as handle:
+        b = pickle.load(handle)
