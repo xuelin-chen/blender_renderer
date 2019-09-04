@@ -113,7 +113,7 @@ blender_util.setup_render(args)
 scene = bpy.context.scene
 
 # render passes for shapenet shape
-blender_util.render_passes(depth_file_output, normal_file_output, albedo_file_output, args, rot_angles_list, subfolder_name='gt', output_format='png')
+blender_util.render_passes(depth_file_output, normal_file_output, albedo_file_output, args, rot_angles_list, subfolder_name='gt', output_format='exr')
 print('Shapenet shape passes done!')
 
 # clear the objects imported previously
