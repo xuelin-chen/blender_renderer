@@ -16,6 +16,14 @@ cat_name2id = {
                 'boat': '04530566',
                 'dresser': '02933112'
                 }
+transformation_ShapeNet_v1tov2 = np.array([ [ 0, 0, 1, 0],
+                                            [ 0, 1, 0, 0],
+                                            [-1, 0, 0, 0],
+                                            [ 0, 0, 0, 1]])
+transformation_ShapeNet_v2tov1 = np.array([ [ 0, 0, -1, 0],
+                                            [ 0, 1,  0, 0],
+                                            [ 1, 0,  0, 0],
+                                            [ 0, 0,  0, 1]])
 
 def get_shapenet_clsID_modelname_from_filename(filename):
     clsid = filename.split('/')[-4]
@@ -194,7 +202,7 @@ def pc_normalize(pc, center_type='bbox', norm_type='diag2sphere', eps=0.01):
       pts_max_trans = np.amax(pc_trans, axis=0)
       diag_length = np.linalg.norm(pts_min_trans - pts_max_trans)
       scale_f = (1. + eps) / diag_length
-      print(pts_min_trans, pts_max_trans, diag_length, scale_f)
+      #print(pts_min_trans, pts_max_trans, diag_length, scale_f)
       return -centroid, scale_f
     else:
       print('Error: unknow normalization type: %s. Not normalizing'%(norm_type))
@@ -387,6 +395,10 @@ def get_albedo_by_ray_intersection(tmesh, blender_cam, reso, ortho_view_scale=1.
         albedo_arr[albedo_arr_idx] = hit_color[:3]
 
     return albedo_arr
+
+def translate_points(points, trans_v):
+
+    return
 
 def transform_points(points, trans_mat):
     '''

@@ -2,13 +2,13 @@
 # Also produces depth map at the same time.
 #
 # Example:
-# /workspace/nn_project/blender-2.79-linux-glibc219-x86_64/blender --background --python generate_pass.py -- --output_folder ./tmp --split_file /workspace/nn_project/pytorch-CycleGAN-and-pix2pix/datasets/shapenet_car_all_split.txt /workspace/dataset/ShapeNetCore.v2/02958343/1a1de15e572e039df085b75b20c2db33/models/model_normalized.obj
+# /workspace/nn_project/blender-2.79-linux-glibc219-x86_64/blender --background --python generate_pass_with_segmentation.py -- --output_folder ./tmp --split_file /workspace/nn_project/pytorch-CycleGAN-and-pix2pix/datasets/shapenet_car_white_list.txt /workspace/dataset/ShapeNetCore.v2/02958343/53a604e4037c650beedcafe524c3dc4c/models/model_normalized.obj
 
 # car
-# find /workspace/dataset/ShapeNetCore.v2/02958343 -name '*.obj' -print0 | xargs -0 -n1 -P10 -I {} /workspace/nn_project/blender-2.79-linux-glibc219-x86_64/blender --background --python generate_pass.py -- --split_file /workspace/nn_project/pytorch-CycleGAN-and-pix2pix/datasets/shapenet_car_all_split.txt --vox_resolution 256 --nb_view 1 --output_folder ./tmp {}
+# find /workspace/dataset/ShapeNetCore.v2/02958343 -name '*.obj' -print0 | xargs -0 -n1 -P10 -I {} /workspace/nn_project/blender-2.79-linux-glibc219-x86_64/blender --background --python generate_pass_with_segmentation.py -- --split_file /workspace/nn_project/pytorch-CycleGAN-and-pix2pix/datasets/shapenet_car_white_list.txt --nb_view 1 --output_folder ./tmp {}
 
 # chair
-# find /workspace/dataset/ShapeNetCore.v2/03001627 -name '*.obj' -print0 | xargs -0 -n1 -P10 -I {} /workspace/nn_project/blender-2.79-linux-glibc219-x86_64/blender --background --python generate_pass.py -- --split_file /workspace/nn_project/pytorch-CycleGAN-and-pix2pix/datasets/shapenet_chair_car_split.txt --vox_resolution 256 --output_folder ./tmp {}
+# find /workspace/dataset/ShapeNetCore.v2/03001627 -name '*.obj' -print0 | xargs -0 -n1 -P10 -I {} /workspace/nn_project/blender-2.79-linux-glibc219-x86_64/blender --background --python generate_pass_with_segmentation.py -- --split_file /workspace/nn_project/pytorch-CycleGAN-and-pix2pix/datasets/shapenet_chair_car_split.txt --output_folder ./tmp {}
 
 import argparse, sys, os
 import numpy as np
@@ -45,7 +45,7 @@ parser.add_argument('--output_folder', type=str, default='./tmp',
                     help='The path the output will be dumped to.')
 parser.add_argument('--normalization_mode', type=str, default='diag2sphere',
                     help='if scale the mesh to be within a unit sphere.')
-parser.add_argument('--vox_resolution', type=int, default=256,
+parser.add_argument('--vox_resolution', type=int, default=128,
                     help='voxelization model resolution')
 parser.add_argument('--split_file', type=str, default='',
                     help='if scale the mesh to be within a unit sphere.')
@@ -97,6 +97,19 @@ if not os.path.exists(vox_mat_filename):
 vox_mesh = util.mesh_from_voxels(vox_mat_filename, int(256/args.vox_resolution)) # already diagonal=1, center at zero
 #vox_mesh.export('vox_mesh.obj')
 
+# read in segmentation points and labels
+# normalize
+import shapenet_part_io as spart
+if not spart.segmentation_exists(cls_id, modelname):
+  print('Segmentation not exist, skip!')
+  bpy.ops.wm.quit_blender()
+seg_points_labels, num_label = spart.read_pts_label_data(cls_id, modelname)
+seg_points_labels[:, :3] = util.transform_points(seg_points_labels[:, :3], util.transformation_ShapeNet_v1tov2)
+trans_v, scale_f = util.pc_normalize(seg_points_labels[:, :3], norm_type=args.normalization_mode)
+seg_points_labels[:, :3] = seg_points_labels[:, :3] + trans_v
+seg_points_labels[:, :3] = seg_points_labels[:, :3] * scale_f
+#util.write_ply(seg_points_labels[:, :3], 'seg_points.ply')
+
 blender_util.clear_scene_objects()
 depth_file_output,normal_file_output,albedo_file_output,matidx_file_output = blender_util.rendering_pass_setup(args)
 
@@ -120,14 +133,39 @@ print('Shapenet shape passes done!')
 # clear the objects imported previously
 blender_util.clear_scene_objects()
 
+print('Obtaining reference point indices...')
+ref_pts_indices = util.get_ref_point_idx_from_point_cloud(vox_mesh, seg_points_labels)
+print('Reference point indices obtained.')
+vox_mesh_face_label_list = seg_points_labels[ref_pts_indices, -1]
 # after reference queries
 # switch axis before rendering
 # transform to switch axis
 vox_mesh.apply_transform(blender_util.R_axis_switching_StoB)
-vox_bmesh = bpy.data.meshes.new('voxmesh')
-vox_bmesh.from_pydata(vox_mesh.vertices.tolist(), [], vox_mesh.faces.tolist())
-obj = bpy.data.objects.new('voxmesh', vox_bmesh)
-bpy.context.scene.objects.link(obj)
+# separate faces into groups based on matidx
+print('Separating submeshes from segmentation labels...')
+submesh_face_list = dict()
+for i in range(len(vox_mesh.faces)):
+  label_cur = vox_mesh_face_label_list[i]
+  if label_cur not in submesh_face_list.keys():
+    submesh_face_list[label_cur] = [i]
+  else:
+    submesh_face_list[label_cur].append(i)
+print('Submeshes done.')
+
+print('Creating blender objects from submeshes...')
+label_color_interval = 1. / num_label
+for label, submesh_face_list in submesh_face_list.items():
+  sub_trimesh = vox_mesh.submesh([submesh_face_list], append=True)
+
+  sub_bmesh = bpy.data.meshes.new('submesh_%d'%(label))
+  sub_bmesh.from_pydata(sub_trimesh.vertices.tolist(), [], sub_trimesh.faces.tolist())
+  obj = bpy.data.objects.new('submesh_%d'%(label), sub_bmesh)
+  bpy.context.scene.objects.link(obj)
+
+  mat = bpy.data.materials.new(name="Material_label_%s"%(label)) #set new material to variable
+  mat.diffuse_color = (label*label_color_interval, label*label_color_interval, label*label_color_interval) #change color
+  obj.data.materials.append(mat)
+print('Blender objects created.')
 
 # render passes for vox shape
 blender_util.render_passes(depth_file_output, normal_file_output, albedo_file_output, args, rot_angles_list, subfolder_name='input', output_format='png')
