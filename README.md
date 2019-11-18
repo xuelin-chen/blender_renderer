@@ -1,4 +1,4 @@
-# blender_renderer
+# ShapeNet renderer
 Scripts for rendering shapenet data in blender, the scripts are tested using blender 2.79.
 
 For generating ShapeNet point cloud, use generate_shapenet_point_cloud.py script:
