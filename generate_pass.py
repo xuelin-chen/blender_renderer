@@ -76,7 +76,7 @@ if not '_demo.txt' in args.split_file or args.split_file == '':
     rot_angles_list.append([rot_x_angle, rot_y_angle, rot_z_angle])
 else: # for demo data
   for x_angle in range(15, 21, 10):
-    for z_angle in range(0, 360, 4):
+    for z_angle in range(0, 360, 6):
       rot_x_angle = x_angle
       rot_y_angle = 0 # do not rot around y, no in-plane rotation
       rot_z_angle = z_angle
