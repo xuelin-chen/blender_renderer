@@ -5,10 +5,10 @@
 # /workspace/nn_project/blender-2.79-linux-glibc219-x86_64/blender --background --python generate_pass.py -- --output_folder ./tmp --split_file /workspace/nn_project/pytorch-CycleGAN-and-pix2pix/datasets/shapenet_car_all_split.txt /workspace/dataset/ShapeNetCore.v2/02958343/1a1de15e572e039df085b75b20c2db33/models/model_normalized.obj
 
 # car
-# find /workspace/dataset/ShapeNetCore.v2/02958343 -name '*.obj' -print0 | xargs -0 -n1 -P10 -I {} /workspace/nn_project/blender-2.79-linux-glibc219-x86_64/blender --background --python generate_pass_shapenet.py -- --split_file /workspace/nn_project/pytorch-CycleGAN-and-pix2pix/datasets/shapenet_car_white_list.txt --output_folder ./car_renderings {}
+# find /workspace/dataset/ShapeNetCore.v2/02958343 -name '*.obj' -print0 | xargs -0 -n1 -P10 -I {} /workspace/nn_project/blender-2.79-linux-glibc219-x86_64/blender --background --python generate_pass_shapenet_preview.py -- --output_folder ./data_filtering_shapenet_car {}
 
 # chair
-# find /workspace/dataset/ShapeNetCore.v2/03001627 -name '*.obj' -print0 | xargs -0 -n1 -P10 -I {} /workspace/nn_project/blender-2.79-linux-glibc219-x86_64/blender --background --python generate_pass_shapenet.py -- --split_file /workspace/nn_project/pytorch-CycleGAN-and-pix2pix/datasets/shapenet_chair_white_list.txt --output_folder ./chair_renderings {}
+# find /workspace/dataset/ShapeNetCore.v2/03001627 -name '*.obj' -print0 | xargs -0 -n1 -P10 -I {} /workspace/nn_project/blender-2.79-linux-glibc219-x86_64/blender --background --python generate_pass_shapenet_preview.py -- --output_folder ./data_filtering_shapenet_chair {}
 
 import argparse, sys, os
 import numpy as np
@@ -49,10 +49,6 @@ parser.add_argument('--normalization_mode', type=str, default='diag2sphere',
 #                    help='voxelization model resolution')
 parser.add_argument('--split_file', type=str, default='',
                     help='if scale the mesh to be within a unit sphere.')
-parser.add_argument('--min_ele', type=float, default=15.,
-                    help='minimum elevation angle of the view point.')
-parser.add_argument('--max_ele', type=float, default=15.,
-                    help='maximum elevation angle of the view point.')
 # usually fix below args
 parser.add_argument('--remove_doubles', type=bool, default=True,
                     help='Remove double vertices to improve mesh quality.')
@@ -73,17 +69,10 @@ args = parser.parse_args(argv)
 # generate random camera rotations
 rot_angles_list = []
 for i in range(args.nb_view):
-  rot_x_angle = random.randint(args.min_ele, args.max_ele)
+  rot_x_angle = 15
   rot_y_angle = 0 # do not rot around y, no in-plane rotation
-  rot_z_angle = random.randint(0, 360)
+  rot_z_angle = 20
   rot_angles_list.append([rot_x_angle, rot_y_angle, rot_z_angle])
-
-cls_id, modelname = util.get_shapenet_clsID_modelname_from_filename(args.obj)
-if args.split_file != '':
-  valid_modelname_list = util.items_in_txt_file(args.split_file)
-  if modelname not in valid_modelname_list:
-    print('Not in split file %s, skip!'%(args.split_file))
-    bpy.ops.wm.quit_blender()
 
 blender_util.clear_scene_objects()
 depth_file_output,normal_file_output,albedo_file_output,matidx_file_output = blender_util.rendering_pass_setup(args)

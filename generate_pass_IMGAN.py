@@ -47,6 +47,10 @@ parser.add_argument('--normalization_mode', type=str, default='diag2sphere',
 #                    help='voxelization model resolution')
 parser.add_argument('--split_file', type=str, default='',
                     help='if scale the mesh to be within a unit sphere.')
+parser.add_argument('--min_ele', type=float, default=15.,
+                    help='minimum elevation angle of the view point.')
+parser.add_argument('--max_ele', type=float, default=15.,
+                    help='maximum elevation angle of the view point.')
 # usually fix below args
 parser.add_argument('--remove_doubles', type=bool, default=True,
                     help='Remove double vertices to improve mesh quality.')
@@ -60,17 +64,26 @@ parser.add_argument('--color_depth', type=str, default='16',
                     help='Number of bit per channel used for output. Either 8 or 16.')
 parser.add_argument('--format', type=str, default='OPEN_EXR',
                     help='Format of files generated. Either PNG or OPEN_EXR')
+parser.add_argument('--demo', action='store_true', help='if this is set, camera will be put around the object densely.')
 
 argv = sys.argv[sys.argv.index("--") + 1:]
 args = parser.parse_args(argv)
 
 # generate random camera rotations
 rot_angles_list = []
-for i in range(args.nb_view):
-  rot_x_angle = random.randint(5, 20)
-  rot_y_angle = 0 # do not rot around y, no in-plane rotation
-  rot_z_angle = random.randint(0, 360)
-  rot_angles_list.append([rot_x_angle, rot_y_angle, rot_z_angle])
+if not args.demo:
+  for i in range(args.nb_view):
+    rot_x_angle = random.randint(args.min_ele, args.max_ele)
+    rot_y_angle = 0 # do not rot around y, no in-plane rotation
+    rot_z_angle = random.randint(0, 360)
+    rot_angles_list.append([rot_x_angle, rot_y_angle, rot_z_angle])
+else:
+  for x_angle in range(15, 21, 10):
+    for z_angle in range(0, 360, 6):
+      rot_x_angle = x_angle
+      rot_y_angle = 0 # do not rot around y, no in-plane rotation
+      rot_z_angle = z_angle
+      rot_angles_list.append([rot_x_angle, rot_y_angle, rot_z_angle])
 
 blender_util.clear_scene_objects()
 depth_file_output,normal_file_output,albedo_file_output,matidx_file_output = blender_util.rendering_pass_setup(args)
