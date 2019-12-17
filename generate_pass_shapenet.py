@@ -2,7 +2,7 @@
 # Also produces depth map at the same time.
 #
 # Example:
-# /workspace/nn_project/blender-2.79-linux-glibc219-x86_64/blender --background --python generate_pass.py -- --output_folder ./tmp --split_file /workspace/nn_project/pytorch-CycleGAN-and-pix2pix/datasets/shapenet_car_all_split.txt /workspace/dataset/ShapeNetCore.v2/02958343/1a1de15e572e039df085b75b20c2db33/models/model_normalized.obj
+# /workspace/nn_project/blender-2.79-linux-glibc219-x86_64/blender --background --python generate_pass_shapenet.py -- --output_folder ./tmp /workspace/dataset/ShapeNetCore.v2/02958343/1a1de15e572e039df085b75b20c2db33/models/model_normalized.obj
 
 # car
 # find /workspace/dataset/ShapeNetCore.v2/02958343 -name '*.obj' -print0 | xargs -0 -n1 -P10 -I {} /workspace/nn_project/blender-2.79-linux-glibc219-x86_64/blender --background --python generate_pass_shapenet.py -- --split_file /workspace/nn_project/pytorch-CycleGAN-and-pix2pix/datasets/shapenet_car_white_list.txt --output_folder ./car_renderings {}
@@ -96,6 +96,9 @@ blender_util.process_scene_objects(args) # including normalization
 for i, mat in enumerate(bpy.data.materials):
   if mat.name in ['Material']: continue
   mat.use_transparency  = False
+
+  # debug
+  #print(mat.roughness)
 
 # setup camera resolution etc
 blender_util.setup_render(args)

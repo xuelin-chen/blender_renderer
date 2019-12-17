@@ -108,7 +108,6 @@ def rendering_pass_setup(args):
     for output_node in [depth_file_output, 
                     normal_file_output, 
                     albedo_file_output, 
-                    #diffuse_file_output, 
                     matidx_file_output]:
         output_node.base_path = ''
 
@@ -159,6 +158,24 @@ def process_scene_objects(args):
           
           object.select = False
 
+def convert_quad_mesh_to_triangle_mesh():
+    for object in bpy.context.scene.objects:
+        if object.name in ['Camera', 'Lamp']:
+            continue
+    
+        bpy.context.scene.objects.active = object
+        object.select = True
+        
+        if object.name == 'sphere':
+            # do not touch the sphere model, which intends to give white albedo color for the background
+            continue 
+        else:
+            bpy.ops.object.mode_set(mode='EDIT')
+            bpy.ops.mesh.quads_convert_to_tris()
+            bpy.ops.object.mode_set(mode='OBJECT')
+          
+        object.select = False
+
 def setup_render(args):
     ########## camera settings ##################
     scene = bpy.context.scene
@@ -179,8 +196,11 @@ def get_default_camera():
         cam_data = bpy.data.cameras.new("Camera")
         cam_obj = bpy.data.objects.new("Camera", cam_data)
         bpy.context.scene.objects.link(cam_obj)
+        bpy.context.scene.camera = cam_obj
         return cam_obj
-    return cam_obj
+    else:
+        bpy.context.scene.camera = cam_obj
+        return cam_obj
 
 def scan_point_cloud(depth_file_output, normal_file_output, albedo_file_output, matidx_file_output, args):
     scene = bpy.context.scene
@@ -261,6 +281,7 @@ def scan_point_cloud(depth_file_output, normal_file_output, albedo_file_output, 
             os.remove(scene.render.filepath + "_depth0001.exr")
             os.remove(scene.render.filepath + "_albedo0001.exr")
             os.remove(scene.render.filepath + "_matidx0001.exr")
+            os.remove('Image0001.exr')
 
     return all_points_normals_colors_mindices
 
@@ -394,7 +415,263 @@ def render_passes(depth_file_output, normal_file_output, albedo_file_output, arg
         os.remove(scene.render.filepath + "_normal0001.exr")
         os.remove(scene.render.filepath + "_depth0001.exr")
         os.remove(scene.render.filepath + "_albedo0001.exr")
+        os.remove('Image0001.exr')
+
+
+###########################
+# for CYCLES RENDER
+def process_scene_objects_CYCLES(args):
+    '''
+    # only worry about data in the startup scene
+    for bpy_data_iter in (
+            bpy.data.lamps,
+            bpy.data.cameras
+    ):
+        for id_data in bpy_data_iter:
+            bpy_data_iter.remove(id_data)
+    '''
+    for object in bpy.context.scene.objects:
+        if object.name in ['Camera', 'Lamp'] or 'Camera' in object.name or 'camera' in object.name or 'lamp' in object.name or 'Lamp' in object.name:
+            continue
     
+        bpy.context.scene.objects.active = object
+        object.select = True
+        
+        if object.name == 'sphere':
+            # do not touch the sphere model, which intends to give white albedo color for the background
+            continue 
+        else:
+          if args.remove_doubles and False:
+              bpy.ops.object.mode_set(mode='EDIT')
+              bpy.ops.mesh.remove_doubles()
+              bpy.ops.object.mode_set(mode='OBJECT')
+          if args.remove_iso_verts and False:
+              bpy.ops.object.mode_set(mode='EDIT')
+              bpy.ops.mesh.delete_loose(use_verts=True, use_edges=True, use_faces=False)
+              bpy.ops.object.mode_set(mode='OBJECT')
+          if args.edge_split and False:
+              bpy.ops.object.modifier_add(type='EDGE_SPLIT')
+              bpy.context.object.modifiers["EdgeSplit"].split_angle = 1.32645
+              bpy.ops.object.modifier_apply(apply_as='DATA', modifier="EdgeSplit")
+          if args.normalization_mode is not None and False:
+              # scale to be within a unit sphere (r=0.5, d=1)
+              v = object.data.vertices
+              verts_np = util.read_verts(object)
+              trans_v, scale_f = util.pc_normalize(verts_np, norm_type=args.normalization_mode)
+              # the axis conversion of importing does not change the data in-place,
+              # so we do it manually
+              trans_v_axis_replaced = trans_v.copy()
+              
+              trans_v_axis_replaced[0] = trans_v[0]
+              trans_v_axis_replaced[1] = -trans_v[2]
+              trans_v_axis_replaced[2] = trans_v[1]
+              
+              bpy.ops.transform.translate(value=(trans_v_axis_replaced[0], trans_v_axis_replaced[1], trans_v_axis_replaced[2]))
+              bpy.ops.object.transform_apply(location=True)
+              bpy.ops.transform.resize(value=(scale_f, scale_f, scale_f))
+              bpy.ops.object.transform_apply(scale=True)
+              #bpy.ops.export_scene.obj(filepath='test.obj', use_selection=True)
+          
+          object.select = False
+
+def rendering_pass_setup_CYCLES(args):
+
+    # Set up rendering.
+    bpy.context.scene.use_nodes = True
+    tree = bpy.context.scene.node_tree
+    links = tree.links
+
+    # Add passes for additionally dumping albedo and normals.
+    bpy.context.scene.render.layers["RenderLayer"].use_pass_normal = True
+    bpy.context.scene.render.layers["RenderLayer"].use_pass_diffuse_color = True
+    bpy.context.scene.render.layers["RenderLayer"].use_pass_glossy_direct = True
+    #bpy.context.scene.render.layers["RenderLayer"].use_pass_diffuse = True
+    bpy.context.scene.render.layers["RenderLayer"].use_pass_material_index = True
+    bpy.context.scene.render.image_settings.file_format = args.format
+    bpy.context.scene.render.image_settings.color_depth = args.color_depth
+
+    # Clear default nodes
+    for n in tree.nodes:
+        tree.nodes.remove(n)
+
+    # Create input render layer node.
+    render_layers = tree.nodes.new('CompositorNodeRLayers')
+
+    # depth pass
+    depth_file_output = tree.nodes.new(type="CompositorNodeOutputFile")
+    depth_file_output.label = 'Depth Output'
+    if args.format == 'OPEN_EXR':
+        links.new(render_layers.outputs['Depth'], depth_file_output.inputs[0])
+    else:
+        # Remap as other types can not represent the full range of depth.
+        map = tree.nodes.new(type="CompositorNodeMapValue")
+        # Size is chosen kind of arbitrarily, try out until you're satisfied with resulting depth map.
+        map.offset = [-0.7]
+        map.size = [args.depth_scale]
+        map.use_min = True
+        map.min = [0]
+        links.new(render_layers.outputs['Depth'], map.inputs[0])
+
+        links.new(map.outputs[0], depth_file_output.inputs[0])
+
+    # normal pass
+    if args.format == 'OPEN_EXR':
+        normal_file_output = tree.nodes.new(type="CompositorNodeOutputFile")
+        normal_file_output.label = 'Normal Output'
+        links.new(render_layers.outputs['Normal'], normal_file_output.inputs[0])
+    else:
+        print('Unknow format.')
+
+    # color pass
+    albedo_file_output = tree.nodes.new(type="CompositorNodeOutputFile")
+    albedo_file_output.label = 'Albedo Output'
+    #print(render_layers.outputs.keys())
+    links.new(render_layers.outputs['DiffCol'], albedo_file_output.inputs[0])
+
+    # glossy direct pass
+    glossydir_file_output = tree.nodes.new(type="CompositorNodeOutputFile")
+    glossydir_file_output.label = 'Glossy Direct Output'
+    links.new(render_layers.outputs['GlossDir'], glossydir_file_output.inputs[0])
+
+    # material index pass
+    matidx_file_output = tree.nodes.new(type="CompositorNodeOutputFile")
+    matidx_file_output.label = 'Matidx Output'
+    links.new(render_layers.outputs['IndexMA'], matidx_file_output.inputs[0])
+
+    for output_node in [depth_file_output, 
+                    normal_file_output, 
+                    albedo_file_output, 
+                    matidx_file_output,
+                    glossydir_file_output]:
+        output_node.base_path = ''
+
+    return depth_file_output, normal_file_output, albedo_file_output, matidx_file_output, glossydir_file_output
+
+def get_material_roughness(mat_idx):
+    mat = get_material_from_passIdx(mat_idx)
+    roughness = 1.
+    if mat is None: return roughness
+    
+    for mat_bsdf in mat.node_tree.nodes.keys():
+        if 'Glossy BSDF' in mat_bsdf or 'Glass BSDF' in mat_bsdf:
+            roughness_tmp = mat.node_tree.nodes[mat_bsdf].inputs[1].default_value
+            if roughness_tmp < roughness: roughness = roughness_tmp
+    return roughness
+
+def assemble_roughness_map(matidx_arr):
+    matidx_arr_cp = matidx_arr.copy()
+    for i in range(len(bpy.data.materials)):
+        roughness_here = get_material_roughness(i)
+        matidx_arr_cp[matidx_arr_cp==i] = roughness_here
+    return matidx_arr_cp
+
+def render_passes_CYCLES(depth_file_output, normal_file_output, albedo_file_output, matidx_file_output, glossdir_file_output, args, rot_angles_list, subfolder_name='gt', output_format='exr'):
+    scene = bpy.context.scene
+    ######### filename for output ##############
+    if 'ShapeNetCore' not in args.obj:
+        model_identifier = args.obj.split('/')[-1].split('.')[0]
+        correct_normal = False
+    else:
+        model_identifier = args.obj.split('/')[-3]
+        correct_normal = True
+    fp = os.path.join(args.output_folder, subfolder_name, model_identifier)
+    scene.render.image_settings.file_format = 'PNG'  # set output format to .png
+
+    # setup camera and render
+    cam_init_location = (0., 10, 0.)
+    cam = get_default_camera()
+    #cam.location = cam_init_location
+    #cam.data.type = 'ORTHO'
+    #cam.data.ortho_scale = args.orth_scale
+    #cam.data.clip_start = 0
+    #cam.data.clip_end = 100 # a value that is large enough
+    #cam_constraint = cam.constraints.new(type='TRACK_TO')
+    #cam_constraint.track_axis = 'TRACK_NEGATIVE_Z'
+    #cam_constraint.up_axis = 'UP_Y'
+    #b_empty = get_lookat_target(cam)
+    #cam_constraint.target = b_empty # track to a empty object at the origin
+
+    # setup light
+    #sun_lamp = setup_sunlamp(b_empty)
+
+    for xyz_angle in rot_angles_list:
+        xyz_angle = [0,0,0]
+
+        # rotate camera
+        #euler_rot_mat = euler2mat(radians(xyz_angle[0]), radians(xyz_angle[1]), radians(xyz_angle[2]), 'sxyz')
+        #new_cam_location = np.dot(euler_rot_mat, np.array(cam_init_location))
+        #cam.location = new_cam_location
+        # the sun lamp follows
+        #sun_lamp.location = new_cam_location
+
+        scene.render.filepath = fp + '-rotx=%.2f_roty=%.2f_rotz=%.2f'%(xyz_angle[0], xyz_angle[1], xyz_angle[2])
+        depth_file_output.file_slots[0].path = scene.render.filepath + "_depth"
+        normal_file_output.file_slots[0].path = scene.render.filepath + "_normal"
+        albedo_file_output.file_slots[0].path = scene.render.filepath + "_albedo"
+        matidx_file_output.file_slots[0].path = scene.render.filepath + "_matidx"
+        glossdir_file_output.file_slots[0].path = scene.render.filepath + "_glossdir"
+
+        # render and write out
+        bpy.ops.render.render(write_still=True, animation=False)  # render still
+        
+        depth_arr, hard_mask_arr = util.read_depth_and_get_mask(scene.render.filepath + "_depth0194.exr")
+        normal_arr = util.read_and_correct_normal(scene.render.filepath + "_normal0194.exr", correct_normal=correct_normal, mask_arr=hard_mask_arr)
+        albedo_arr = util.read_exr_image(scene.render.filepath + "_albedo0194.exr")
+        matidx_arr = util.read_exr_image(scene.render.filepath + "_matidx0194.exr")[:,:,0]
+        glossdir_arr = util.read_exr_image(scene.render.filepath + "_glossdir0194.exr")
+        # and the clip value range
+        depth_arr = np.clip(depth_arr, a_min=0, a_max=1)
+        normal_arr = np.clip(normal_arr, a_min=-1, a_max=1)
+        albedo_arr = np.clip(albedo_arr, a_min=0, a_max=1)
+        glossdir_arr = np.clip(glossdir_arr, a_min=0, a_max=1)
+
+        # 
+        roughness_arr = assemble_roughness_map(matidx_arr)
+
+        # write out passes
+        if output_format == 'exr':
+            util.write_exr_image(depth_arr, scene.render.filepath + "_depth.exr")
+            #util.write_exr_image(xyz_sworld_arr, scene.render.filepath + "_wxyz.exr")
+            util.write_exr_image(normal_arr, scene.render.filepath + "_normal.exr")
+            #util.write_exr_image(normal_sworld_arr, scene.render.filepath + "_wnormal.exr")
+            util.write_exr_image(albedo_arr, scene.render.filepath + "_albedo.exr")
+            util.write_exr_image(hard_mask_arr, scene.render.filepath + "_mask.exr")
+            util.write_exr_image(glossdir_arr, scene.render.filepath + "_glossdir.exr")
+            util.write_exr_image(roughness_arr, scene.render.filepath + "_roughness.exr")
+        elif output_format == 'png':
+            depth_arr = np.array(depth_arr*255, dtype=np.uint8)
+            depth_pil = Image.fromarray(depth_arr)
+            depth_pil.save(scene.render.filepath + "_depth.png")
+
+            normal_arr = np.array((normal_arr+1)/2.*255, dtype=np.uint8)
+            normal_pil = Image.fromarray(normal_arr)
+            normal_pil.save(scene.render.filepath + "_normal.png")
+        
+            albedo_arr = np.array(albedo_arr*255, dtype=np.uint8)
+            albedo_pil = Image.fromarray(albedo_arr)
+            albedo_pil.save(scene.render.filepath + "_albedo.png")
+
+            hard_mask_arr = np.array(hard_mask_arr*255, dtype=np.uint8)
+            mask_pil = Image.fromarray(hard_mask_arr)
+            mask_pil.save(scene.render.filepath + "_mask.png")
+
+            glossdir_arr = np.array(glossdir_arr*255, dtype=np.uint8)
+            glossdir_pil = Image.fromarray(glossdir_arr)
+            glossdir_pil.save(scene.render.filepath + "_glossdir.png")
+
+            roughness_arr = np.array(roughness_arr*255, dtype=np.uint8)
+            roughness_pil = Image.fromarray(roughness_arr)
+            roughness_pil.save(scene.render.filepath + "_roughness.png")
+
+        # remove renderings
+        #os.remove(scene.render.filepath+'.png')
+        os.remove(scene.render.filepath + "_normal0001.exr")
+        os.remove(scene.render.filepath + "_depth0001.exr")
+        os.remove(scene.render.filepath + "_albedo0001.exr")
+        os.remove(scene.render.filepath + "_glossdir0001.exr")
+        os.remove('Image0001.exr')
+   
+
 def bcam2world_RT_matrixes(rot_angles_list):
     scene = bpy.context.scene
     ######### filename for output ##############
