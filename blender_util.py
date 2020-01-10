@@ -47,9 +47,45 @@ def get_lookat_target(b_camera):
     scn.objects.active = b_empty
     return b_empty
 
+def get_obj_verts(obj, read_global=False):
+    vertices = obj.data.vertices
+    if read_global:
+        verts = [obj.matrix_world * vert.co for vert in vertices] 
+    else:
+        verts = [vert.co for vert in vertices] 
+    verts = np.array(verts)
+    return verts
+
+from mathutils import Vector, Matrix
+import mathutils
+def translate_obj(obj, trans_v):
+    obj.delta_location[0] = trans_v[0]
+    obj.delta_location[1] = trans_v[1]
+    obj.delta_location[2] = trans_v[2]
+
+def rotate_obj(obj, euler_angles=[0, 0, 0]):
+    '''
+    rotate object in XYZ order, in angles
+    '''
+    mat_world = obj.matrix_world
+
+    rot_x = Matrix.Rotation(radians(euler_angles[0]), 4, 'X')
+    rot_y = Matrix.Rotation(radians(euler_angles[1]), 4, 'Y')
+    rot_z = Matrix.Rotation(radians(euler_angles[2]), 4, 'Z')
+    rot_mat = rot_z * rot_y * rot_x
+
+    mat_edit = rot_mat * mat_world
+    obj.matrix_world = mat_edit
+
+
+def scale_obj(obj, scale_v):
+    obj.delta_scale[0] = scale_v[0]
+    obj.delta_scale[1] = scale_v[1]
+    obj.delta_scale[2] = scale_v[2]
+
 ########### setup before rendering
 def rendering_pass_setup(args):
-
+    bpy.context.scene.frame_set(1)
     # Set up rendering.
     bpy.context.scene.use_nodes = True
     tree = bpy.context.scene.node_tree
@@ -140,7 +176,7 @@ def process_scene_objects(args):
           if args.normalization_mode is not None:
               # scale to be within a unit sphere (r=0.5, d=1)
               v = object.data.vertices
-              verts_np = util.read_verts(object)
+              verts_np = util.read_verts(object) # NOTE: get vertices in object local space
               trans_v, scale_f = util.pc_normalize(verts_np, norm_type=args.normalization_mode)
               # the axis conversion of importing does not change the data in-place,
               # so we do it manually
@@ -160,9 +196,7 @@ def process_scene_objects(args):
 
 def convert_quad_mesh_to_triangle_mesh():
     for object in bpy.context.scene.objects:
-        if object.name in ['Camera', 'Lamp']:
-            continue
-    
+        if not object.type == 'MESH': continue
         bpy.context.scene.objects.active = object
         object.select = True
         
@@ -281,7 +315,7 @@ def scan_point_cloud(depth_file_output, normal_file_output, albedo_file_output, 
             os.remove(scene.render.filepath + "_depth0001.exr")
             os.remove(scene.render.filepath + "_albedo0001.exr")
             os.remove(scene.render.filepath + "_matidx0001.exr")
-            os.remove('Image0001.exr')
+            #os.remove('Image0001.exr')
 
     return all_points_normals_colors_mindices
 
@@ -415,67 +449,99 @@ def render_passes(depth_file_output, normal_file_output, albedo_file_output, arg
         os.remove(scene.render.filepath + "_normal0001.exr")
         os.remove(scene.render.filepath + "_depth0001.exr")
         os.remove(scene.render.filepath + "_albedo0001.exr")
-        os.remove('Image0001.exr')
+        #os.remove('Image0001.exr')
 
 
 ###########################
 # for CYCLES RENDER
 def process_scene_objects_CYCLES(args):
-    '''
+    
     # only worry about data in the startup scene
+    # remove lamps and cameras
     for bpy_data_iter in (
             bpy.data.lamps,
             bpy.data.cameras
     ):
         for id_data in bpy_data_iter:
             bpy_data_iter.remove(id_data)
+
+    for ob in bpy.context.scene.objects:
+        if ob.type != 'MESH':
+            ob.select = True
+        else:
+            ob.select = False
+    bpy.ops.object.delete()
+
+    # join all objects togather
+    # make the first one active object
+    # select the rest ones, then join
     '''
-    for object in bpy.context.scene.objects:
-        if object.name in ['Camera', 'Lamp'] or 'Camera' in object.name or 'camera' in object.name or 'lamp' in object.name or 'Lamp' in object.name:
-            continue
+    for ob in bpy.context.scene.objects:
+        if ob.type == 'MESH':
+            ob.select = True
+            bpy.context.scene.objects.active = ob
+        else:
+            ob.select = False
+    bpy.ops.object.join()
+    '''
+
+    #assert len(bpy.context.scene.objects) == 1
+    '''
+    bpy.ops.object.select_all(action='DESELECT')
+    obj_names = []
+    for i, object in enumerate(bpy.context.scene.objects):
+        obj_names.append(object.name)
     
+    bpy.ops.object.mode_set(mode='EDIT')
+    for obj_name in obj_names:
+        bpy.data.objects[obj_name].select = True
+        bpy.ops.mesh.separate(type='LOOSE')
+        bpy.ops.object.select_all(action='DESELECT')
+    '''
+
+    # normalization
+    # apply all modifiers in all objects to get the actual meshes
+    for i, object in enumerate(bpy.context.scene.objects):
+        bpy.context.scene.objects.active = object
+        object.select = True
+        for modifier in object.modifiers:
+            bpy.ops.object.modifier_apply(modifier=modifier.name)
+
+    # get all actual points for calculating transformation
+    all_verts = []
+    for i, object in enumerate(bpy.context.scene.objects):
+        verts_np = get_obj_verts(object, read_global=True)
+        all_verts += list(verts_np)
+    all_verts_np = np.array(all_verts)
+    trans_v, scale_f = util.pc_normalize(all_verts_np, norm_type=args.normalization_mode)
+
+    #bpy.ops.wm.save_as_mainfile(filepath='test0.blend')
+
+    for i, object in enumerate(bpy.context.scene.objects):
         bpy.context.scene.objects.active = object
         object.select = True
         
-        if object.name == 'sphere':
-            # do not touch the sphere model, which intends to give white albedo color for the background
-            continue 
-        else:
-          if args.remove_doubles and False:
-              bpy.ops.object.mode_set(mode='EDIT')
-              bpy.ops.mesh.remove_doubles()
-              bpy.ops.object.mode_set(mode='OBJECT')
-          if args.remove_iso_verts and False:
-              bpy.ops.object.mode_set(mode='EDIT')
-              bpy.ops.mesh.delete_loose(use_verts=True, use_edges=True, use_faces=False)
-              bpy.ops.object.mode_set(mode='OBJECT')
-          if args.edge_split and False:
-              bpy.ops.object.modifier_add(type='EDGE_SPLIT')
-              bpy.context.object.modifiers["EdgeSplit"].split_angle = 1.32645
-              bpy.ops.object.modifier_apply(apply_as='DATA', modifier="EdgeSplit")
-          if args.normalization_mode is not None and False:
-              # scale to be within a unit sphere (r=0.5, d=1)
-              v = object.data.vertices
-              verts_np = util.read_verts(object)
-              trans_v, scale_f = util.pc_normalize(verts_np, norm_type=args.normalization_mode)
-              # the axis conversion of importing does not change the data in-place,
-              # so we do it manually
-              trans_v_axis_replaced = trans_v.copy()
-              
-              trans_v_axis_replaced[0] = trans_v[0]
-              trans_v_axis_replaced[1] = -trans_v[2]
-              trans_v_axis_replaced[2] = trans_v[1]
-              
-              bpy.ops.transform.translate(value=(trans_v_axis_replaced[0], trans_v_axis_replaced[1], trans_v_axis_replaced[2]))
-              bpy.ops.object.transform_apply(location=True)
-              bpy.ops.transform.resize(value=(scale_f, scale_f, scale_f))
-              bpy.ops.object.transform_apply(scale=True)
-              #bpy.ops.export_scene.obj(filepath='test.obj', use_selection=True)
-          
-          object.select = False
+        if args.normalization_mode is not None:
+            # too complicated to scale the object, so we only translate the object to the original without touching the scaling
+            translate_obj(object, trans_v)
+
+            # debug
+            rotate_obj(object, [0,0,180])
+            
+            #scale_obj(object, [scale_f, scale_f, scale_f])
+            #bpy.ops.transform.resize(value=(scale_f, scale_f, scale_f))
+            #bpy.ops.object.transform_apply(scale=True)
+            #bpy.ops.export_scene.obj(filepath='test.obj', use_selection=True)
+        
+        object.select = False
+    # save to debug
+    bpy.ops.wm.save_as_mainfile(filepath='test1.blend')
+
+    diag_length = 1 / scale_f
+    return diag_length
 
 def rendering_pass_setup_CYCLES(args):
-
+    bpy.context.scene.frame_set(1)
     # Set up rendering.
     bpy.context.scene.use_nodes = True
     tree = bpy.context.scene.node_tree
@@ -565,44 +631,43 @@ def assemble_roughness_map(matidx_arr):
         matidx_arr_cp[matidx_arr_cp==i] = roughness_here
     return matidx_arr_cp
 
-def render_passes_CYCLES(depth_file_output, normal_file_output, albedo_file_output, matidx_file_output, glossdir_file_output, args, rot_angles_list, subfolder_name='gt', output_format='exr'):
+def render_passes_CYCLES(depth_file_output, normal_file_output, albedo_file_output, matidx_file_output, glossdir_file_output, args, rot_angles_list, diag_length=1., subfolder_name='gt', output_format='exr'):
+    scaling_factor_unit2scene = diag_length / 1.
+    scaling_facotr_scene2unit = 1. / diag_length
+
     scene = bpy.context.scene
     ######### filename for output ##############
     if 'ShapeNetCore' not in args.obj:
         model_identifier = args.obj.split('/')[-1].split('.')[0]
-        correct_normal = False
     else:
         model_identifier = args.obj.split('/')[-3]
-        correct_normal = True
     fp = os.path.join(args.output_folder, subfolder_name, model_identifier)
     scene.render.image_settings.file_format = 'PNG'  # set output format to .png
 
     # setup camera and render
-    cam_init_location = (0., 10, 0.)
+    cam_init_location = (0.0 * scaling_factor_unit2scene, 0.5 * scaling_factor_unit2scene, 0.0 * scaling_factor_unit2scene)
     cam = get_default_camera()
-    #cam.location = cam_init_location
-    #cam.data.type = 'ORTHO'
-    #cam.data.ortho_scale = args.orth_scale
-    #cam.data.clip_start = 0
-    #cam.data.clip_end = 100 # a value that is large enough
-    #cam_constraint = cam.constraints.new(type='TRACK_TO')
-    #cam_constraint.track_axis = 'TRACK_NEGATIVE_Z'
-    #cam_constraint.up_axis = 'UP_Y'
-    #b_empty = get_lookat_target(cam)
-    #cam_constraint.target = b_empty # track to a empty object at the origin
+    cam.location = cam_init_location
+    cam.data.type = 'ORTHO'
+    cam.data.ortho_scale = args.orth_scale * scaling_factor_unit2scene
+    cam.data.clip_start = 0
+    cam.data.clip_end = 100 # a value that is large enough
+    cam_constraint = cam.constraints.new(type='TRACK_TO')
+    cam_constraint.track_axis = 'TRACK_NEGATIVE_Z'
+    cam_constraint.up_axis = 'UP_Y'
+    b_empty = get_lookat_target(cam)
+    cam_constraint.target = b_empty # track to a empty object at the origin
 
     # setup light
-    #sun_lamp = setup_sunlamp(b_empty)
+    sun_lamp = setup_sunlamp(b_empty)
 
     for xyz_angle in rot_angles_list:
-        xyz_angle = [0,0,0]
-
         # rotate camera
-        #euler_rot_mat = euler2mat(radians(xyz_angle[0]), radians(xyz_angle[1]), radians(xyz_angle[2]), 'sxyz')
-        #new_cam_location = np.dot(euler_rot_mat, np.array(cam_init_location))
-        #cam.location = new_cam_location
+        euler_rot_mat = euler2mat(radians(xyz_angle[0]), radians(xyz_angle[1]), radians(xyz_angle[2]), 'sxyz')
+        new_cam_location = np.dot(euler_rot_mat, np.array(cam_init_location))
+        cam.location = new_cam_location
         # the sun lamp follows
-        #sun_lamp.location = new_cam_location
+        sun_lamp.location = new_cam_location
 
         scene.render.filepath = fp + '-rotx=%.2f_roty=%.2f_rotz=%.2f'%(xyz_angle[0], xyz_angle[1], xyz_angle[2])
         depth_file_output.file_slots[0].path = scene.render.filepath + "_depth"
@@ -614,11 +679,15 @@ def render_passes_CYCLES(depth_file_output, normal_file_output, albedo_file_outp
         # render and write out
         bpy.ops.render.render(write_still=True, animation=False)  # render still
         
-        depth_arr, hard_mask_arr = util.read_depth_and_get_mask(scene.render.filepath + "_depth0194.exr")
-        normal_arr = util.read_and_correct_normal(scene.render.filepath + "_normal0194.exr", correct_normal=correct_normal, mask_arr=hard_mask_arr)
-        albedo_arr = util.read_exr_image(scene.render.filepath + "_albedo0194.exr")
-        matidx_arr = util.read_exr_image(scene.render.filepath + "_matidx0194.exr")[:,:,0]
-        glossdir_arr = util.read_exr_image(scene.render.filepath + "_glossdir0194.exr")
+        depth_arr, hard_mask_arr = util.read_depth_and_get_mask(scene.render.filepath + "_depth0001.exr", depth_scaling_factor=scaling_facotr_scene2unit)
+        normal_arr = util.read_normal(scene.render.filepath + "_normal0001.exr", mask_arr=hard_mask_arr)
+        # in CYCLES, the normal is in world system, rotate it to camera system
+        normal_cam_arr = util.transform_points(np.reshape(normal_arr, (-1, 3)), blender_camera_util.get_world2bcam_R_matrix_from_blender(cam))
+        normal_cam_arr = np.reshape(normal_cam_arr, normal_arr.shape)
+        normal_arr = normal_cam_arr
+        albedo_arr = util.read_exr_image(scene.render.filepath + "_albedo0001.exr")
+        matidx_arr = util.read_exr_image(scene.render.filepath + "_matidx0001.exr")[:,:,0]
+        glossdir_arr = util.read_exr_image(scene.render.filepath + "_glossdir0001.exr")
         # and the clip value range
         depth_arr = np.clip(depth_arr, a_min=0, a_max=1)
         normal_arr = np.clip(normal_arr, a_min=-1, a_max=1)
@@ -668,8 +737,9 @@ def render_passes_CYCLES(depth_file_output, normal_file_output, albedo_file_outp
         os.remove(scene.render.filepath + "_normal0001.exr")
         os.remove(scene.render.filepath + "_depth0001.exr")
         os.remove(scene.render.filepath + "_albedo0001.exr")
+        os.remove(scene.render.filepath + "_matidx0001.exr")
         os.remove(scene.render.filepath + "_glossdir0001.exr")
-        os.remove('Image0001.exr')
+        #os.remove('Image0001.exr')
    
 
 def bcam2world_RT_matrixes(rot_angles_list):

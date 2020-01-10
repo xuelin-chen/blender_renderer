@@ -9,11 +9,10 @@
 
 # chair
 # find /workspace/dataset/ShapeNetCore.v2/03001627 -name '*.obj' -print0 | xargs -0 -n1 -P10 -I {} /workspace/nn_project/blender-2.79-linux-glibc219-x86_64/blender --background --python generate_pass_shapenet.py -- --split_file /workspace/nn_project/pytorch-CycleGAN-and-pix2pix/datasets/shapenet_chair_white_list.txt --output_folder ./chair_renderings {}
-
+import bpy
 import argparse, sys, os
 import numpy as np
 
-import bpy
 from math import radians
 
 import OpenEXR as exr
@@ -78,8 +77,20 @@ for i in range(args.nb_view):
   rot_z_angle = random.randint(0, 360)
   rot_angles_list.append([rot_x_angle, rot_y_angle, rot_z_angle])
 
-blender_util.clear_scene_objects()
+#blender_util.clear_scene_objects()
 bpy.ops.wm.open_mainfile(filepath=args.obj)
+
+win      = bpy.context.window
+scr      = win.screen
+areas3d  = [area for area in scr.areas if area.type == 'VIEW_3D']
+region   = [region for region in areas3d[0].regions if region.type == 'WINDOW']
+override = {'window':win,
+            'screen':scr,
+            'area'  :areas3d[0],
+            'region':region,
+            'scene' :bpy.context.scene,
+            }
+
 
 depth_file_output,normal_file_output,albedo_file_output,matidx_file_output, glossdir_file_output = blender_util.rendering_pass_setup_CYCLES(args)
 # this axis conversion does not change the data in-place
@@ -87,19 +98,20 @@ depth_file_output,normal_file_output,albedo_file_output,matidx_file_output, glos
 #bpy.data.scenes['Scene'].render.engine = 'BLENDER_RENDER'
 #bpy.ops.import_scene.obj(filepath=args.obj, use_smooth_groups=False, use_split_objects=False, use_split_groups=False)
 #blender_util.convert_quad_mesh_to_triangle_mesh()
-blender_util.process_scene_objects_CYCLES(args) # including normalization
+diag_length = blender_util.process_scene_objects_CYCLES(args) # including normalization
 
 # disable transparency for all materials
 for i, mat in enumerate(bpy.data.materials):
   mat.pass_index = i
   #if mat.name != 'Karbon.001': continue
   mat.use_transparency  = False
+  mat.alpha = 1.
 
   # debug
-  print(mat.name)
-  print(mat.node_tree.nodes.keys())
+  #print(mat.name)
+  #print(mat.node_tree.nodes.keys())
   #print(mat.node_tree.nodes["Glossy BSDF.001"].inputs[1].default_value)
-  print(blender_util.get_material_roughness(i))
+  #print(blender_util.get_material_roughness(i))
 
 
 # setup camera resolution etc
@@ -107,7 +119,7 @@ blender_util.setup_render(args)
 scene = bpy.context.scene
 
 # render passes for shapenet shape
-blender_util.render_passes_CYCLES(depth_file_output, normal_file_output, albedo_file_output, matidx_file_output, glossdir_file_output, args, rot_angles_list, subfolder_name='shapenet', output_format='png')
+blender_util.render_passes_CYCLES(depth_file_output, normal_file_output, albedo_file_output, matidx_file_output, glossdir_file_output, args, rot_angles_list, diag_length=diag_length, subfolder_name='shapenet', output_format='png')
 print('Shapenet shape passes done!')
 
-#bpy.ops.wm.save_as_mainfile(filepath='test.blend')
+bpy.ops.wm.save_as_mainfile(filepath='test.blend')

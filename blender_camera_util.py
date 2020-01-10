@@ -92,6 +92,11 @@ def get_3x4_RT_matrix_from_blender(cam):
          ))
     return RT
 
+def get_3x4_P_matrix_from_blender(cam):
+    K = get_calibration_matrix_K_from_blender(cam.data)
+    RT = get_3x4_RT_matrix_from_blender(cam)
+    return K*RT, K, RT
+
 def get_bcam2world_RT_matrix_from_blender(cam):
     location, rotation = cam.matrix_world.decompose()[0:2]
     R_world2bcam = rotation.to_matrix().transposed()
@@ -104,10 +109,27 @@ def get_bcam2world_RT_matrix_from_blender(cam):
     RT = np.linalg.inv(RT)
     return RT
 
-def get_3x4_P_matrix_from_blender(cam):
-    K = get_calibration_matrix_K_from_blender(cam.data)
-    RT = get_3x4_RT_matrix_from_blender(cam)
-    return K*RT, K, RT
+def get_world2bcam_R_matrix_from_blender(cam):
+    location, rotation = cam.matrix_world.decompose()[0:2]
+    R_world2bcam = rotation.to_matrix().transposed()
+
+    R = np.zeros((4,4))
+    R[3, 3] = 1
+    R[:3, :3] = np.array(R_world2bcam)
+    
+    return R
+
+def get_world2bcam_RT_matrix_from_blender(cam):
+    location, rotation = cam.matrix_world.decompose()[0:2]
+    R_world2bcam = rotation.to_matrix().transposed()
+    T_world2bcam = -1*R_world2bcam * location
+
+    RT = np.zeros((4,4))
+    RT[3, 3] = 1
+    RT[:3, :3] = np.array(R_world2bcam)
+    RT[:3, 3] = np.array(T_world2bcam)
+    
+    return RT
 
 # ----------------------------------------------------------
 # Alternate 3D coordinates to 2D pixel coordinate projection code

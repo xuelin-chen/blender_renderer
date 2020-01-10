@@ -153,6 +153,7 @@ def write_exr_image(im_arr, exr_filename):
 
 ############# util functions ###################
 def read_verts(mesh):
+    '''mesh: blender mesh, TODO: move this function to blender_util. NOTE: only use this function in single shape rendering (shapenet + IMGAN , etc), not for scene rendering'''
     mverts_co = np.zeros((len(mesh.data.vertices)*3), dtype=np.float)
     mesh.data.vertices.foreach_get("co", mverts_co)
     return np.reshape(mverts_co, (len(mesh.data.vertices), 3)) 
@@ -253,10 +254,28 @@ def mesh_normalize(tmesh, center_type='bbox', norm_type='unit_sphere', eps=0.05)
     
     return trimesh.Trimesh(vertices=new_verts, faces=tmesh.faces)
 
+def read_normal(exr_filename, mask_arr=None):
+    '''
+    input:
+      exr_filename: normal image, NOTE: need to first flip all normals in Blender Render
+      correct_normal: if set True, will flip normals that are wrongly pointing
+      mask_arr: 0 - bg, 1 - fg, if is not None, will set the bg normal to [0, 0, 0]
+    return: corrected normal
+    '''
+
+    # get the whole array and toward all normals to camera
+    img_arr = read_exr_image(exr_filename)
+
+    if mask_arr is not None:
+        bg_mask = np.all((np.expand_dims(mask_arr, axis=2))==0, axis=-1)
+        img_arr[bg_mask] = [0, 0, 0] # set bg normal to 0
+
+    return img_arr
+
 def read_and_correct_normal(exr_filename, correct_normal=True, mask_arr=None):
     '''
     input:
-      exr_filename: normal image
+      exr_filename: normal image, NOTE: need to first flip all normals in Blender Render
       correct_normal: if set True, will flip normals that are wrongly pointing
       mask_arr: 0 - bg, 1 - fg, if is not None, will set the bg normal to [0, 0, 0]
     return: corrected normal
@@ -276,12 +295,15 @@ def read_and_correct_normal(exr_filename, correct_normal=True, mask_arr=None):
 
     return img_arr
   
-def read_depth_and_get_mask(depth_exr_filename, far_thre=1):
+def read_depth_and_get_mask(depth_exr_filename, far_thre=1, depth_scaling_factor=1.0):
     # foreground -> 1
     # bg -> 0
     # any pixel with depth larger than far_thre will be considered as bg
     # get the whole array
     img_arr = read_exr_image(depth_exr_filename)
+
+    # depth scaling
+    img_arr *= depth_scaling_factor
 
     depth_arr = img_arr[:, :, 0] # only the first channel, the rest is the same
     depth_arr = np.expand_dims(depth_arr, axis=2) # (res, res, 1)

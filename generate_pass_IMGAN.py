@@ -2,8 +2,10 @@
 # Also produces depth map at the same time.
 #
 
-# car
+# car train
 # find /workspace/nn_project/implicit-decoder/IMGAN/car_samples_4096_reso128 -name '*.obj' -print0 | xargs -0 -n1 -P10 -I {} /workspace/nn_project/blender-2.79-linux-glibc219-x86_64/blender --background --python generate_pass_IMGAN.py -- --output_folder ./car_renderings {}
+# car demo
+# find /workspace/nn_project/implicit-decoder/IMGAN/car_samples_4096_reso128_demo -name '*.obj' -print0 | xargs -0 -n1 -P1 -I {} /workspace/nn_project/blender-2.79-linux-glibc219-x86_64/blender --background --python generate_pass_IMGAN.py -- --demo --output_folder ./car_renderings_demo {}
 
 # chair
 # find /workspace/nn_project/implicit-decoder/IMGAN/chair_samples_4096_reso64 -name '*.obj' -print0 | xargs -0 -n1 -P10 -I {} /workspace/nn_project/blender-2.79-linux-glibc219-x86_64/blender --background --python generate_pass_IMGAN.py -- --output_folder ./chair_renderings {}
@@ -47,9 +49,9 @@ parser.add_argument('--normalization_mode', type=str, default='diag2sphere',
 #                    help='voxelization model resolution')
 parser.add_argument('--split_file', type=str, default='',
                     help='if scale the mesh to be within a unit sphere.')
-parser.add_argument('--min_ele', type=float, default=15.,
+parser.add_argument('--min_ele', type=float, default=5.,
                     help='minimum elevation angle of the view point.')
-parser.add_argument('--max_ele', type=float, default=15.,
+parser.add_argument('--max_ele', type=float, default=20.,
                     help='maximum elevation angle of the view point.')
 # usually fix below args
 parser.add_argument('--remove_doubles', type=bool, default=True,
@@ -78,13 +80,13 @@ if not args.demo:
     rot_z_angle = random.randint(0, 360)
     rot_angles_list.append([rot_x_angle, rot_y_angle, rot_z_angle])
 else:
+  print('Generating from dense views...')
   for x_angle in range(15, 21, 10):
     for z_angle in range(0, 360, 6):
       rot_x_angle = x_angle
       rot_y_angle = 0 # do not rot around y, no in-plane rotation
       rot_z_angle = z_angle
       rot_angles_list.append([rot_x_angle, rot_y_angle, rot_z_angle])
-
 blender_util.clear_scene_objects()
 depth_file_output,normal_file_output,albedo_file_output,matidx_file_output = blender_util.rendering_pass_setup(args)
 
