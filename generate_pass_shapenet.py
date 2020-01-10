@@ -49,9 +49,9 @@ parser.add_argument('--normalization_mode', type=str, default='diag2sphere',
 #                    help='voxelization model resolution')
 parser.add_argument('--split_file', type=str, default='',
                     help='if scale the mesh to be within a unit sphere.')
-parser.add_argument('--min_ele', type=float, default=15.,
+parser.add_argument('--min_ele', type=float, default=5.,
                     help='minimum elevation angle of the view point.')
-parser.add_argument('--max_ele', type=float, default=15.,
+parser.add_argument('--max_ele', type=float, default=20.,
                     help='maximum elevation angle of the view point.')
 # usually fix below args
 parser.add_argument('--remove_doubles', type=bool, default=True,
