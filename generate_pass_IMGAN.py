@@ -81,8 +81,8 @@ if not args.demo:
     rot_angles_list.append([rot_x_angle, rot_y_angle, rot_z_angle])
 else:
   print('Generating from dense views...')
-  for x_angle in range(15, 21, 10):
-    for z_angle in range(0, 360, 6):
+  for x_angle in range(10, 16, 5): 
+    for z_angle in range(-90, 91, 3): 
       rot_x_angle = x_angle
       rot_y_angle = 0 # do not rot around y, no in-plane rotation
       rot_z_angle = z_angle

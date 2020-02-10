@@ -53,6 +53,7 @@ parser.add_argument('--min_ele', type=float, default=5.,
                     help='minimum elevation angle of the view point.')
 parser.add_argument('--max_ele', type=float, default=20.,
                     help='maximum elevation angle of the view point.')
+parser.add_argument('--demo', action='store_true', help='if this is set, camera will be put around the object densely.')
 # usually fix below args
 parser.add_argument('--remove_doubles', type=bool, default=True,
                     help='Remove double vertices to improve mesh quality.')
@@ -72,11 +73,20 @@ args = parser.parse_args(argv)
 
 # generate random camera rotations
 rot_angles_list = []
-for i in range(args.nb_view):
-  rot_x_angle = random.randint(args.min_ele, args.max_ele)
-  rot_y_angle = 0 # do not rot around y, no in-plane rotation
-  rot_z_angle = random.randint(0, 360)
-  rot_angles_list.append([rot_x_angle, rot_y_angle, rot_z_angle])
+if not args.demo:
+  for i in range(args.nb_view):
+    rot_x_angle = random.randint(args.min_ele, args.max_ele)
+    rot_y_angle = 0 # do not rot around y, no in-plane rotation
+    rot_z_angle = random.randint(0, 360)
+    rot_angles_list.append([rot_x_angle, rot_y_angle, rot_z_angle])
+else:
+  print('Generating from dense views...')
+  for x_angle in range(10, 12, 5): # only 10 deg ele
+    for z_angle in range(-90, 91, 20): # 10 camera views
+      rot_x_angle = x_angle
+      rot_y_angle = 0 # do not rot around y, no in-plane rotation
+      rot_z_angle = z_angle
+      rot_angles_list.append([rot_x_angle, rot_y_angle, rot_z_angle])
 
 cls_id, modelname = util.get_shapenet_clsID_modelname_from_filename(args.obj)
 if args.split_file != '':
