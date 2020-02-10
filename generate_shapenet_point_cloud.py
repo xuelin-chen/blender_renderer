@@ -32,7 +32,7 @@ import random
 parser = argparse.ArgumentParser(description='Renders given obj file by rotation a camera around it.')
 parser.add_argument('--reso', type=int, default=640,
                     help='resolution')
-parser.add_argument('--nb_view', type=int, default=12,
+parser.add_argument('--nb_view', type=int, default=36,
                     help='number of views per model to render passes')
 parser.add_argument('--orth_scale', type=int, default=1,
                     help='view scale of orthogonal camera')
@@ -64,9 +64,9 @@ cls_id, modelname = util.get_shapenet_clsID_modelname_from_filename(args.obj)
 # generate random camera rotations
 rot_angles_list = []
 for i in range(args.nb_view):
-  rot_x_angle = random.randint(0, 30)
+  rot_x_angle = random.randint(0, 360) # camera elevation angle
   rot_y_angle = 0 # do not rot around y, no in-plane rotation
-  rot_z_angle = random.randint(0, 360)
+  rot_z_angle = random.randint(0, 360) # camera azimuth angle
   rot_angles_list.append([rot_x_angle, rot_y_angle, rot_z_angle])
 
 blender_util.clear_scene_objects()
@@ -88,7 +88,7 @@ blender_util.setup_render(args)
 scene = bpy.context.scene
 
 # render shapenet shape to get color point cloud
-all_points_normals_colors_mindices = blender_util.scan_point_cloud(depth_file_output, normal_file_output, albedo_file_output, matidx_file_output, args)
+all_points_normals_colors_mindices = blender_util.scan_point_cloud(depth_file_output, normal_file_output, albedo_file_output, matidx_file_output, args, rot_angles_list)
 all_points_normals_colors_mindices = util.sample_from_point_cloud(all_points_normals_colors_mindices, int(all_points_normals_colors_mindices.shape[0]/10))
 
 util.write_ply(all_points_normals_colors_mindices[:, :3], os.path.join(args.output_folder, modelname+'.ply'), colors=all_points_normals_colors_mindices[:, 6:9], normals=all_points_normals_colors_mindices[:, 3:6])

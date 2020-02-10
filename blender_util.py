@@ -236,7 +236,7 @@ def get_default_camera():
         bpy.context.scene.camera = cam_obj
         return cam_obj
 
-def scan_point_cloud(depth_file_output, normal_file_output, albedo_file_output, matidx_file_output, args):
+def scan_point_cloud(depth_file_output, normal_file_output, albedo_file_output, matidx_file_output, args, rot_angles_list):
     scene = bpy.context.scene
     ######### filename for output ##############
     if 'ShapeNetCore' not in args.obj:
@@ -250,10 +250,11 @@ def scan_point_cloud(depth_file_output, normal_file_output, albedo_file_output, 
     
     # scan shapenet shape into point cloud with features
     all_points_normals_colors_mindices = None
-    for i in range(0, 3):
+    for xyz_angle in rot_angles_list:
+
+        # init camera
         cam = get_default_camera()
-        if i == 1: cam_init_location = (0, 0, 0.5)
-        else: cam_init_location = (0, 0.5, 0)
+        cam_init_location = (0, 0, 0.5)
         cam.data.type = 'ORTHO'
         cam.data.ortho_scale = args.orth_scale
         cam.data.clip_start = 0
@@ -263,59 +264,51 @@ def scan_point_cloud(depth_file_output, normal_file_output, albedo_file_output, 
         cam_constraint.up_axis = 'UP_Y'
         b_empty = get_lookat_target(cam)
         cam_constraint.target = b_empty # track to a empty object at the origin
-
-        for rot_angle in range(0, 359, 20):
-            if i == 0:
-                xyz_angle = [rot_angle, 0, 0]
-            elif i == 1:
-                xyz_angle = [0, rot_angle, 0]
-            elif i == 2:
-                xyz_angle = [0, 0, rot_angle]
             
-            # rotate camera
-            euler_rot_mat = euler2mat(radians(xyz_angle[0]), radians(xyz_angle[1]), radians(xyz_angle[2]), 'sxyz')
-            new_cam_location = np.dot(euler_rot_mat, np.array(cam_init_location))
-            cam.location = new_cam_location
+        # rotate camera
+        euler_rot_mat = euler2mat(radians(xyz_angle[0]), radians(xyz_angle[1]), radians(xyz_angle[2]), 'sxyz')
+        new_cam_location = np.dot(euler_rot_mat, np.array(cam_init_location))
+        cam.location = new_cam_location
 
-            scene.render.filepath = fp + '-rotx=%.2f_roty=%.2f_rotz=%.2f'%(xyz_angle[0], xyz_angle[1], xyz_angle[2])
-            depth_file_output.file_slots[0].path = scene.render.filepath + "_depth"
-            normal_file_output.file_slots[0].path = scene.render.filepath + "_normal"
-            albedo_file_output.file_slots[0].path = scene.render.filepath + "_albedo"
-            matidx_file_output.file_slots[0].path = scene.render.filepath + "_matidx"
+        scene.render.filepath = fp + '-rotx=%.2f_roty=%.2f_rotz=%.2f'%(xyz_angle[0], xyz_angle[1], xyz_angle[2])
+        depth_file_output.file_slots[0].path = scene.render.filepath + "_depth"
+        normal_file_output.file_slots[0].path = scene.render.filepath + "_normal"
+        albedo_file_output.file_slots[0].path = scene.render.filepath + "_albedo"
+        matidx_file_output.file_slots[0].path = scene.render.filepath + "_matidx"
 
-            # render and write out
-            bpy.ops.render.render(write_still=True)  # render still
+        # render and write out
+        bpy.ops.render.render(write_still=True)  # render still
 
-            depth_arr, hard_mask_arr = util.read_depth_and_get_mask(scene.render.filepath + "_depth0001.exr")
-            normal_arr = util.read_and_correct_normal(scene.render.filepath + "_normal0001.exr", correct_normal=correct_normal, mask_arr=hard_mask_arr)
-            albedo_arr = util.read_exr_image(scene.render.filepath + "_albedo0001.exr")
-            matidx_arr = util.read_exr_image(scene.render.filepath + "_matidx0001.exr")[:,:,0]
-            # and the clip value range
-            depth_arr = np.clip(depth_arr, a_min=0, a_max=1)
-            normal_arr = np.clip(normal_arr, a_min=-1, a_max=1)
-            albedo_arr = np.clip(albedo_arr, a_min=0, a_max=1)
+        depth_arr, hard_mask_arr = util.read_depth_and_get_mask(scene.render.filepath + "_depth0001.exr")
+        normal_arr = util.read_and_correct_normal(scene.render.filepath + "_normal0001.exr", correct_normal=correct_normal, mask_arr=hard_mask_arr)
+        albedo_arr = util.read_exr_image(scene.render.filepath + "_albedo0001.exr")
+        matidx_arr = util.read_exr_image(scene.render.filepath + "_matidx0001.exr")[:,:,0]
+        # and the clip value range
+        depth_arr = np.clip(depth_arr, a_min=0, a_max=1)
+        normal_arr = np.clip(normal_arr, a_min=-1, a_max=1)
+        albedo_arr = np.clip(albedo_arr, a_min=0, a_max=1)
 
-            # process renderings to get the point cloud
-            xyz_arr = util.get_3D_points_from_ortho_depth(depth_arr, args.orth_scale)
-            xyz_normal_rgb_midx = np.reshape(np.concatenate([xyz_arr, normal_arr, albedo_arr, np.expand_dims(matidx_arr, -1)], axis=-1), (-1, 10))
-            xyz_normal_rgb_midx = util.remove_bg_points(xyz_normal_rgb_midx)
-            # transform from depth to 3D world point cloud
-            RT_bcam2world = blender_camera_util.get_bcam2world_RT_matrix_from_blender(cam)
-            # matrix for switching back axis of the obj file when output
-            xyz_normal_rgb_midx[:, :3] = util.transform_points(xyz_normal_rgb_midx[:, :3], np.dot(R_axis_switching_BtoS, RT_bcam2world))
-            xyz_normal_rgb_midx[:, 3:6] = util.transform_points(xyz_normal_rgb_midx[:, 3:6], np.dot(R_axis_switching_BtoS, RT_bcam2world))
-            if all_points_normals_colors_mindices is None:
-                all_points_normals_colors_mindices = xyz_normal_rgb_midx
-            else:
-                all_points_normals_colors_mindices = np.concatenate([all_points_normals_colors_mindices, xyz_normal_rgb_midx], axis=0)
-            
-            # remove renderings
-            os.remove(scene.render.filepath+'.png')
-            os.remove(scene.render.filepath + "_normal0001.exr")
-            os.remove(scene.render.filepath + "_depth0001.exr")
-            os.remove(scene.render.filepath + "_albedo0001.exr")
-            os.remove(scene.render.filepath + "_matidx0001.exr")
-            #os.remove('Image0001.exr')
+        # process renderings to get the point cloud
+        xyz_arr = util.get_3D_points_from_ortho_depth(depth_arr, args.orth_scale)
+        xyz_normal_rgb_midx = np.reshape(np.concatenate([xyz_arr, normal_arr, albedo_arr, np.expand_dims(matidx_arr, -1)], axis=-1), (-1, 10))
+        xyz_normal_rgb_midx = util.remove_bg_points(xyz_normal_rgb_midx)
+        # transform from depth to 3D world point cloud
+        RT_bcam2world = blender_camera_util.get_bcam2world_RT_matrix_from_blender(cam)
+        # matrix for switching back axis of the obj file when output
+        xyz_normal_rgb_midx[:, :3] = util.transform_points(xyz_normal_rgb_midx[:, :3], np.dot(R_axis_switching_BtoS, RT_bcam2world))
+        xyz_normal_rgb_midx[:, 3:6] = util.transform_points(xyz_normal_rgb_midx[:, 3:6], np.dot(R_axis_switching_BtoS, RT_bcam2world))
+        if all_points_normals_colors_mindices is None:
+            all_points_normals_colors_mindices = xyz_normal_rgb_midx
+        else:
+            all_points_normals_colors_mindices = np.concatenate([all_points_normals_colors_mindices, xyz_normal_rgb_midx], axis=0)
+        
+        # remove renderings
+        os.remove(scene.render.filepath+'.png')
+        os.remove(scene.render.filepath + "_normal0001.exr")
+        os.remove(scene.render.filepath + "_depth0001.exr")
+        os.remove(scene.render.filepath + "_albedo0001.exr")
+        os.remove(scene.render.filepath + "_matidx0001.exr")
+        #os.remove('Image0001.exr')
 
     return all_points_normals_colors_mindices
 
