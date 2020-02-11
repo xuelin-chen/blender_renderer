@@ -40,8 +40,8 @@ parser.add_argument('obj', type=str,
                     help='Path to the obj file to be rendered.')
 parser.add_argument('--output_folder', type=str, default='./tmp',
                     help='The path the output will be dumped to.')
-parser.add_argument('--normalization_mode', type=str, default='diag2sphere',
-                    help='if scale the mesh to be within a unit sphere.')
+parser.add_argument('--normalization_mode', type=str, default=None,
+                    help='if scale the mesh to be within a unit sphere. [None | diag2sphere | unit_sphere | unit_cube]')
 # usually fix below args
 parser.add_argument('--remove_doubles', type=bool, default=True,
                     help='Remove double vertices to improve mesh quality.')
