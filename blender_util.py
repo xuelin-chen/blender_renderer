@@ -175,6 +175,7 @@ def process_scene_objects(args):
               bpy.ops.object.modifier_apply(apply_as='DATA', modifier="EdgeSplit")
           if args.normalization_mode is not None:
               # scale to be within a unit sphere (r=0.5, d=1)
+              '''
               v = object.data.vertices
               verts_np = util.read_verts(object) # NOTE: get vertices in object local space
               trans_v, scale_f = util.pc_normalize(verts_np, norm_type=args.normalization_mode)
@@ -185,12 +186,17 @@ def process_scene_objects(args):
               trans_v_axis_replaced[0] = trans_v[0]
               trans_v_axis_replaced[1] = -trans_v[2]
               trans_v_axis_replaced[2] = trans_v[1]
-              
+              '''
+
+              verts_np = get_obj_verts(object, read_global=True)
+              trans_v, scale_f = util.pc_normalize(verts_np, norm_type=args.normalization_mode)
+              trans_v_axis_replaced = trans_v
+
               bpy.ops.transform.translate(value=(trans_v_axis_replaced[0], trans_v_axis_replaced[1], trans_v_axis_replaced[2]))
               bpy.ops.object.transform_apply(location=True)
               bpy.ops.transform.resize(value=(scale_f, scale_f, scale_f))
               bpy.ops.object.transform_apply(scale=True)
-              #bpy.ops.export_scene.obj(filepath='test.obj', use_selection=True)
+              bpy.ops.export_scene.obj(filepath='./test.obj', use_selection=True)
           
           object.select = False
 
@@ -254,7 +260,7 @@ def scan_point_cloud(depth_file_output, normal_file_output, albedo_file_output, 
 
         # init camera
         cam = get_default_camera()
-        cam_init_location = (0, 0, 0.5)
+        cam_init_location = (0, 0.5, 0)
         cam.data.type = 'ORTHO'
         cam.data.ortho_scale = args.orth_scale
         cam.data.clip_start = 0
@@ -264,7 +270,7 @@ def scan_point_cloud(depth_file_output, normal_file_output, albedo_file_output, 
         cam_constraint.up_axis = 'UP_Y'
         b_empty = get_lookat_target(cam)
         cam_constraint.target = b_empty # track to a empty object at the origin
-            
+        
         # rotate camera
         euler_rot_mat = euler2mat(radians(xyz_angle[0]), radians(xyz_angle[1]), radians(xyz_angle[2]), 'sxyz')
         new_cam_location = np.dot(euler_rot_mat, np.array(cam_init_location))

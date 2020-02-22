@@ -72,7 +72,8 @@ for i in range(args.nb_view):
 blender_util.clear_scene_objects()
 depth_file_output,normal_file_output,albedo_file_output,matidx_file_output = blender_util.rendering_pass_setup(args)
 
-# this axis conversion does not change the data in-place
+# shapenet v2 coordinate system: Y - up, -Z - face
+# after imported to blender, the up of the object will be the Z axis in blender world...
 bpy.ops.import_scene.obj(filepath=args.obj, use_smooth_groups=False, use_split_objects=False, use_split_groups=False)
 blender_util.process_scene_objects(args) # including normalization
 
