@@ -61,7 +61,7 @@ args = parser.parse_args(argv)
 
 cls_id, modelname = util.get_shapenet_clsID_modelname_from_filename(args.obj)
 
-# generate random camera rotations
+# generate random camera rotations in blender coordinate system
 rot_angles_list = []
 for i in range(args.nb_view):
   rot_x_angle = random.randint(0, 360) # camera elevation angle

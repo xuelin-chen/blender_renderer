@@ -71,7 +71,7 @@ parser.add_argument('--format', type=str, default='OPEN_EXR',
 argv = sys.argv[sys.argv.index("--") + 1:]
 args = parser.parse_args(argv)
 
-# generate random camera rotations
+# generate random camera rotations in blender coordinate system
 rot_angles_list = []
 if not args.demo:
   for i in range(args.nb_view):
@@ -98,7 +98,8 @@ if args.split_file != '':
 blender_util.clear_scene_objects()
 depth_file_output,normal_file_output,albedo_file_output,matidx_file_output = blender_util.rendering_pass_setup(args)
 
-# this axis conversion does not change the data in-place
+# shapenet v2 coordinate system: Y - up, -Z - face
+# after imported to blender, the up of the object will be the Z axis in blender world...
 bpy.ops.import_scene.obj(filepath=args.obj, use_smooth_groups=False, use_split_objects=False, use_split_groups=False)
 blender_util.process_scene_objects(args) # including normalization
 
@@ -106,10 +107,8 @@ blender_util.process_scene_objects(args) # including normalization
 for i, mat in enumerate(bpy.data.materials):
   if mat.name in ['Material']: continue
   mat.use_transparency  = False
-
   # debug
   #print(mat.roughness)
-
 # setup camera resolution etc
 blender_util.setup_render(args)
 scene = bpy.context.scene
