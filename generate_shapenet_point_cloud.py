@@ -69,6 +69,9 @@ for i in range(args.nb_view):
   rot_z_angle = random.randint(0, 360) # camera azimuth angle
   rot_angles_list.append([rot_x_angle, rot_y_angle, rot_z_angle])
 
+# debug
+rot_angles_list = [[0,0,0]]
+
 blender_util.clear_scene_objects()
 depth_file_output,normal_file_output,albedo_file_output,matidx_file_output = blender_util.rendering_pass_setup(args)
 

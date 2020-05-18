@@ -148,6 +148,7 @@ def write_exr_image(im_arr, exr_filename):
         channelData[c] = array.array('f', im_arr[:, :, i].astype(np.float32).flatten().tostring())
 
     exr_out = exr.OutputFile(exr_filename, new_header)
+    print(exr_filename)
     exr_out.writePixels(channelData)
     return
 

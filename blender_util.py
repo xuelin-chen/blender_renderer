@@ -92,6 +92,7 @@ def rendering_pass_setup(args):
     links = tree.links
 
     # Add passes for additionally dumping albedo and normals.
+    bpy.context.scene.render.layers["RenderLayer"].use_pass_combined = False
     bpy.context.scene.render.layers["RenderLayer"].use_pass_normal = True
     bpy.context.scene.render.layers["RenderLayer"].use_pass_color = True
     #bpy.context.scene.render.layers["RenderLayer"].use_pass_diffuse = True
@@ -196,7 +197,7 @@ def process_scene_objects(args):
               bpy.ops.object.transform_apply(location=True)
               bpy.ops.transform.resize(value=(scale_f, scale_f, scale_f))
               bpy.ops.object.transform_apply(scale=True)
-              bpy.ops.export_scene.obj(filepath='./test.obj', use_selection=True)
+              #bpy.ops.export_scene.obj(filepath='./test.obj', use_selection=True)
           
           object.select = False
 
@@ -260,7 +261,7 @@ def scan_point_cloud(depth_file_output, normal_file_output, albedo_file_output, 
 
         # init camera
         cam = get_default_camera()
-        cam_init_location = (0, 0.5, 0)
+        cam_init_location = [0, 0.5, 0]
         cam.data.type = 'ORTHO'
         cam.data.ortho_scale = args.orth_scale
         cam.data.clip_start = 0
@@ -444,11 +445,13 @@ def render_passes(depth_file_output, normal_file_output, albedo_file_output, arg
             mask_pil.save(scene.render.filepath + "_mask.png")
 
         # remove renderings
-        #os.remove(scene.render.filepath+'.png')
+        os.remove(scene.render.filepath+'.png')
         os.remove(scene.render.filepath + "_normal0001.exr")
         os.remove(scene.render.filepath + "_depth0001.exr")
         os.remove(scene.render.filepath + "_albedo0001.exr")
         #os.remove('Image0001.exr')
+
+
 
 
 ###########################

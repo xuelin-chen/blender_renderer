@@ -60,6 +60,7 @@ def get_calibration_matrix_K_from_blender(camd):
 #         used in digital images)
 #       - right-handed: positive z look-at direction
 def get_3x4_RT_matrix_from_blender(cam):
+    '''NOTE: this function returns world to cv matrix, NOT camera pose matrix!'''
     # bcam stands for blender camera
     R_bcam2cv = Matrix(
         ((1, 0,  0),

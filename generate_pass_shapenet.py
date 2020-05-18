@@ -5,10 +5,10 @@
 # /workspace/nn_project/blender-2.79-linux-glibc219-x86_64/blender --background --python generate_pass_shapenet.py -- --output_folder ./tmp /workspace/dataset/ShapeNetCore.v2/02958343/1a1de15e572e039df085b75b20c2db33/models/model_normalized.obj
 
 # car
-# find /workspace/dataset/ShapeNetCore.v2/02958343 -name '*.obj' -print0 | xargs -0 -n1 -P10 -I {} /workspace/nn_project/blender-2.79-linux-glibc219-x86_64/blender --background --python generate_pass_shapenet.py -- --split_file /workspace/nn_project/pytorch-CycleGAN-and-pix2pix/datasets/shapenet_car_white_list.txt --output_folder ./car_renderings {}
+# find /workspace/dataset/ShapeNetCore.v2/02958343 -name '*.obj' -print0 | xargs -0 -n1 -P8 -I {} /workspace/nn_project/blender-2.79-linux-glibc219-x86_64/blender --background --python generate_pass_shapenet.py -- --split_file /workspace/nn_project/pytorch-CycleGAN-and-pix2pix/datasets/shapenet_car_white_list.txt --output_folder ./nips_data/shapenet_car_renderings_im_reso1024_train {}
 
 # chair
-# find /workspace/dataset/ShapeNetCore.v2/03001627 -name '*.obj' -print0 | xargs -0 -n1 -P10 -I {} /workspace/nn_project/blender-2.79-linux-glibc219-x86_64/blender --background --python generate_pass_shapenet.py -- --split_file /workspace/nn_project/pytorch-CycleGAN-and-pix2pix/datasets/shapenet_chair_white_list.txt --output_folder ./chair_renderings {}
+# find /workspace/dataset/ShapeNetCore.v2/03001627 -name '*.obj' -print0 | xargs -0 -n1 -P8 -I {} /workspace/nn_project/blender-2.79-linux-glibc219-x86_64/blender --background --python generate_pass_shapenet.py -- --split_file /workspace/nn_project/pytorch-CycleGAN-and-pix2pix/datasets/shapenet_chair_white_list.txt --output_folder ./nips_data/shapenet_chair_renderings_im_reso1024_train {}
 
 import argparse, sys, os
 import numpy as np
@@ -33,7 +33,7 @@ import trimesh
 import random
 
 parser = argparse.ArgumentParser(description='Renders given obj file by rotation a camera around it.')
-parser.add_argument('--reso', type=int, default=768,
+parser.add_argument('--reso', type=int, default=1024,
                     help='resolution')
 parser.add_argument('--nb_view', type=int, default=6,
                     help='number of views per model to render passes')
@@ -49,7 +49,7 @@ parser.add_argument('--normalization_mode', type=str, default='diag2sphere',
 #                    help='voxelization model resolution')
 parser.add_argument('--split_file', type=str, default='',
                     help='if scale the mesh to be within a unit sphere.')
-parser.add_argument('--min_ele', type=float, default=5.,
+parser.add_argument('--min_ele', type=float, default=0.,
                     help='minimum elevation angle of the view point.')
 parser.add_argument('--max_ele', type=float, default=20.,
                     help='maximum elevation angle of the view point.')
@@ -77,7 +77,8 @@ if not args.demo:
   for i in range(args.nb_view):
     rot_x_angle = random.randint(args.min_ele, args.max_ele)
     rot_y_angle = 0 # do not rot around y, no in-plane rotation
-    rot_z_angle = random.randint(0, 360)
+    rot_z_angle = random.randint(-90, 90)
+    if rot_z_angle < 0: rot_z_angle = rot_z_angle + 360.
     rot_angles_list.append([rot_x_angle, rot_y_angle, rot_z_angle])
 else:
   print('Generating from dense views...')
