@@ -92,7 +92,8 @@ def rendering_pass_setup(args):
     links = tree.links
 
     # Add passes for additionally dumping albedo and normals.
-    bpy.context.scene.render.layers["RenderLayer"].use_pass_combined = False
+    print(bpy.context.scene.render.layers.items())
+    bpy.context.scene.render.layers["RenderLayer"].use_pass_combined = True
     bpy.context.scene.render.layers["RenderLayer"].use_pass_normal = True
     bpy.context.scene.render.layers["RenderLayer"].use_pass_color = True
     #bpy.context.scene.render.layers["RenderLayer"].use_pass_diffuse = True
@@ -176,18 +177,6 @@ def process_scene_objects(args):
               bpy.ops.object.modifier_apply(apply_as='DATA', modifier="EdgeSplit")
           if args.normalization_mode is not None:
               # scale to be within a unit sphere (r=0.5, d=1)
-              '''
-              v = object.data.vertices
-              verts_np = util.read_verts(object) # NOTE: get vertices in object local space
-              trans_v, scale_f = util.pc_normalize(verts_np, norm_type=args.normalization_mode)
-              # the axis conversion of importing does not change the data in-place,
-              # so we do it manually
-              trans_v_axis_replaced = trans_v.copy()
-              
-              trans_v_axis_replaced[0] = trans_v[0]
-              trans_v_axis_replaced[1] = -trans_v[2]
-              trans_v_axis_replaced[2] = trans_v[1]
-              '''
 
               verts_np = get_obj_verts(object, read_global=True)
               trans_v, scale_f = util.pc_normalize(verts_np, norm_type=args.normalization_mode)
