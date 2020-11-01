@@ -32,7 +32,7 @@ from transforms3d.euler import euler2mat
 
 parser = argparse.ArgumentParser(description='Renders a spinning scene.')
 
-parser.add_argument('--reso', type=int, default=512,
+parser.add_argument('--reso', type=int, default=256,
                     help='resolution')
 parser.add_argument('--nb_views', type=int, default=60,
                     help='number of views per model to render passes')
@@ -40,7 +40,7 @@ parser.add_argument('--scene', type=str,
                     help='Path to the scene file to be rendered.')
 parser.add_argument('--output_folder', type=str, default='./tmp',
                     help='The path the output will be dumped to.')
-parser.add_argument('--normalize_obj', type=bool, default=False,
+parser.add_argument('--normalize_obj', action='store_true', 
                     help='if to normalize the object in the scene.')
 
 #camera
@@ -69,6 +69,11 @@ args = parser.parse_args(argv)
 def render_spinning_obj(args, camera_location=[0, 2, 0], data_split_name='train'):
     ######### filename for output ##############
     fp = args.output_folder
+
+    # Get the filename only from the initial file path.
+    filename = os.path.basename(args.scene)
+    # Use splitext() to get filename and extension separately.
+    (target_obj_name, ext) = os.path.splitext(filename)
     
     # set up renderer
     scene = bpy.context.scene
@@ -99,15 +104,22 @@ def render_spinning_obj(args, camera_location=[0, 2, 0], data_split_name='train'
 
     # lamp
     #bpy.context.scene.objects['Lamp'].matrix_world = cam.matrix_world
-    
+
+    euler_list = []
+    view_angle_step = 360. / args.nb_views * 2.
+    for i in range(int(args.nb_views/2)):
+        euler_list.append([0, 0, view_angle_step])
+    for i in range(int(args.nb_views/2)):
+        euler_list.append([view_angle_step, 0, 0])   
+
     frames = []
-    view_angle_step = 360. / args.nb_views
-    for aidx in range(args.nb_views):
+    for aidx, euler_angle in enumerate(euler_list):
         for object in bpy.context.scene.objects:
-          if 'Empty' not in object.name and 'Camera' not in object.name and 'Lamp' not in object.name and 'Hemi' not in object.name:
+            if object.name != target_obj_name: continue
+          
             bpy.context.scene.objects.active = object
             #object.select = True
-            blender_util.rotate_obj(object, (0, 0, view_angle_step) )
+            blender_util.rotate_obj(object, euler_angle )
             #object.select = False
 
         scene.render.filepath = fp + '/images/{:s}/{:06d}'.format(data_split_name, aidx)
@@ -116,7 +128,7 @@ def render_spinning_obj(args, camera_location=[0, 2, 0], data_split_name='train'
         bpy.ops.render.render(write_still=True)  # render still
 
         frame_here = {}
-        frame_here['file_path'] = scene.render.filepath + '.png'
+        frame_here['file_path'] = 'images/{:s}/{:06d}'.format(data_split_name, aidx) + '.png'
         frame_here['camera_pose_matrix'] = np.array(cam.matrix_world).tolist() # get camera pose: cam2world matrix
         frame_here['object_transform_matrix_relative'] = np.array(mathutils.Matrix.Rotation(radians(view_angle_step), 4, 'Z')).tolist()
         frame_here['object_transform_matrix_absolute'] = np.array(mathutils.Matrix.Rotation(radians(view_angle_step * aidx), 4, 'Z')).tolist()
