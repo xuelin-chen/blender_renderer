@@ -2,8 +2,9 @@
 # Also produces depth map at the same time.
 #
 # Example:
-# /home/kpl/xuelin/project/blender-2.79-linux-glibc219-x86_64/blender --background --python render_spinning_obj.py -- --scene ./data/Barrel.blend --output_folder ./output/barrel
+# /home/kpl/xuelin/project/blender-2.79-linux-glibc219-x86_64/blender --background --python render_spinning_obj.py -- --scene ./data/Barrel.blend --output_folder barrel
 
+# /home/kpl/xuelin/project/blender-2.79-linux-glibc219-x86_64/blender --background --python render_spinning_obj.py -- --scene ./data/chair.blend --output_folder chair  --no_obj_normalization
 
 
 import argparse, sys, os
@@ -40,8 +41,8 @@ parser.add_argument('--scene', type=str,
                     help='Path to the scene file to be rendered.')
 parser.add_argument('--output_folder', type=str, default='./tmp',
                     help='The path the output will be dumped to.')
-parser.add_argument('--normalize_obj', action='store_true', 
-                    help='if to normalize the object in the scene.')
+parser.add_argument('--no_obj_normalization', action='store_true', 
+                    help='if NOT to normalize the object in the scene.')
 
 #camera
 parser.add_argument('--cam_dist', type=float, default=2.0,
@@ -108,12 +109,16 @@ def render_spinning_obj(args, camera_location=[0, 2, 0], data_split_name='train'
     euler_list = []
     view_angle_step = 360. / args.nb_views * 2.
     for i in range(int(args.nb_views/2)):
+        if i==0: euler_list.append([0,0,0])
         euler_list.append([0, 0, view_angle_step])
     for i in range(int(args.nb_views/2)):
         euler_list.append([view_angle_step, 0, 0])   
 
     frames = []
+    transform_mat_abs = mathutils.Matrix.Identity(4)
     for aidx, euler_angle in enumerate(euler_list):
+
+        # rotate the target object
         for object in bpy.context.scene.objects:
             if object.name != target_obj_name: continue
           
@@ -130,8 +135,14 @@ def render_spinning_obj(args, camera_location=[0, 2, 0], data_split_name='train'
         frame_here = {}
         frame_here['file_path'] = 'images/{:s}/{:06d}'.format(data_split_name, aidx) + '.png'
         frame_here['camera_pose_matrix'] = np.array(cam.matrix_world).tolist() # get camera pose: cam2world matrix
-        frame_here['object_transform_matrix_relative'] = np.array(mathutils.Matrix.Rotation(radians(view_angle_step), 4, 'Z')).tolist()
-        frame_here['object_transform_matrix_absolute'] = np.array(mathutils.Matrix.Rotation(radians(view_angle_step * aidx), 4, 'Z')).tolist()
+
+        rot_x_delta = mathutils.Matrix.Rotation(radians(euler_angle[0]), 4, 'X')
+        rot_y_delta = mathutils.Matrix.Rotation(radians(euler_angle[1]), 4, 'Y')
+        rot_z_delta = mathutils.Matrix.Rotation(radians(euler_angle[2]), 4, 'Z')
+        transform_mat_rel = rot_z_delta * rot_y_delta * rot_x_delta
+        transform_mat_abs = transform_mat_rel * transform_mat_abs
+        frame_here['object_transform_matrix_relative'] = np.array(transform_mat_rel).tolist()
+        frame_here['object_transform_matrix_absolute'] = np.array(transform_mat_abs).tolist()
         
         frames.append(frame_here)
 
@@ -156,7 +167,7 @@ if __name__=='__main__':
     bpy.ops.wm.open_mainfile(filepath=args.scene)
 
     # process the object in the scene
-    if args.normalize_obj:
+    if not args.no_obj_normalization:
         # Get the filename only from the initial file path.
         filename = os.path.basename(args.scene)
         # Use splitext() to get filename and extension separately.
@@ -184,7 +195,7 @@ if __name__=='__main__':
     # render passes for shapenet shape
     render_spinning_obj(args, camera_location=(0, args.cam_dist, 0), data_split_name='train')
     render_spinning_obj(args, camera_location=(0, args.cam_dist, 0), data_split_name='val')
-    render_spinning_obj(args, camera_location=(0,-args.cam_dist, 0), data_split_name='test')
+    render_spinning_obj(args, camera_location=(0, args.cam_dist, 0), data_split_name='test')
     print('Done!')
 
     #bpy.ops.wm.save_as_mainfile(filepath='test_test.blend')
