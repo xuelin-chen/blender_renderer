@@ -7,6 +7,8 @@
 # /home/kpl/xuelin/project/blender-2.79-linux-glibc219-x86_64/blender --background --python render_spinning_obj.py -- --scene ./data/chair.blend --output_folder chair  --no_obj_normalization
 
 
+
+
 import argparse, sys, os
 import numpy as np
 import json
@@ -43,6 +45,10 @@ parser.add_argument('--output_folder', type=str, default='./tmp',
                     help='The path the output will be dumped to.')
 parser.add_argument('--no_obj_normalization', action='store_true', 
                     help='if NOT to normalize the object in the scene.')
+parser.add_argument('--random_motion', action='store_true', 
+                    help='whether to spin randomly.')
+parser.add_argument('--angle_step', type=float, default=6.0,
+                    help='step size in degree.')
 
 #camera
 parser.add_argument('--cam_dist', type=float, default=2.0,
@@ -103,16 +109,36 @@ def render_spinning_obj(args, camera_location=[0, 2, 0], data_split_name='train'
             object.select = False
     cam_constraint.target = b_empty # track to a empty object at the origin    
 
-    # lamp
-    #bpy.context.scene.objects['Lamp'].matrix_world = cam.matrix_world
-
     euler_list = []
-    view_angle_step = 360. / args.nb_views * 2.
-    for i in range(int(args.nb_views/2)):
-        if i==0: euler_list.append([0,0,0])
-        euler_list.append([0, 0, view_angle_step])
-    for i in range(int(args.nb_views/2)):
-        euler_list.append([view_angle_step, 0, 0])   
+    if not args.random_motion:
+        view_angle_step = 360. / args.nb_views * 2.
+        
+        for i in range( int(args.nb_views/2) - 10 ):
+            if i==0: euler_list.append([0,0,0])
+            euler_list.append([0, 0, view_angle_step])
+
+        for i in range( int(args.nb_views/2) ):
+            euler_list.append([view_angle_step, 0, 0])   
+
+        for i in range( 10 ):
+            euler_list.append([0, 0, view_angle_step])
+    else:
+        angle_step = args.angle_step
+        for i in range(args.nb_views):
+            if i==0: euler_list.append([0,0,0])
+            
+            #angle_x = np.random.random_sample() * angle_step
+            #angle_y = np.random.random_sample() * angle_step
+            #angle_z = np.random.random_sample() * angle_step
+            if i < args.nb_views/2:
+                angle_x = (np.random.random_sample() * 2. - 1.) * angle_step
+                angle_y = 0
+                angle_z = angle_step
+            else:
+                angle_x = angle_step
+                angle_y = 0
+                angle_z = (np.random.random_sample() * 2. - 1.) * angle_step
+            euler_list.append([angle_x, angle_y, angle_z])
 
     frames = []
     transform_mat_abs = mathutils.Matrix.Identity(4)
